@@ -1,0 +1,170 @@
+[
+  {
+    "id": 1,
+    "name": "Ruby Red Lipstick",
+    "price": 899,
+    "category": "Lips",
+    "description": "Long-lasting matte finish lipstick with rich pigmentation. Perfect for all-day wear.",
+    "image": "https://images.pexels.com/photos/14839822/pexels-photo-14839822.jpeg"
+  },
+  {
+    "id": 2,
+    "name": "Rose Petal Blush",
+    "price": 749,
+    "category": "Face",
+    "description": "Silky smooth blush that gives you a natural rosy glow. Buildable formula.",
+    "image": "https://images.pexels.com/photos/17354882/pexels-photo-17354882.jpeg"
+  },
+  {
+    "id": 3,
+    "name": "Midnight Black Eyeliner",
+    "price": 599,
+    "category": "Eyes",
+    "description": "Waterproof gel eyeliner with precision applicator. Smudge-proof formula.",
+    "image": "https://images.pexels.com/photos/2697787/pexels-photo-2697787.jpeg"
+  },
+  {
+    "id": 4,
+    "name": "Hydrating Face Cream",
+    "price": 1299,
+    "category": "Skincare",
+    "description": "24-hour moisturizing cream with hyaluronic acid. Suitable for all skin types.",
+    "image": "https://images.pexels.com/photos/10221859/pexels-photo-10221859.jpeg"
+  },
+  {
+    "id": 5,
+    "name": "Nude Matte Lipstick",
+    "price": 899,
+    "category": "Lips",
+    "description": "Everyday nude shade with comfortable matte finish. Non-drying formula.",
+    "image": "https://images.pexels.com/photos/28968376/pexels-photo-28968376.jpeg"
+  },
+  {
+    "id": 6,
+    "name": "Shimmer Eyeshadow Palette",
+    "price": 1499,
+    "category": "Eyes",
+    "description": "12-color palette with metallic and matte shades. Highly pigmented.",
+    "image": "https://images.pexels.com/photos/18978417/pexels-photo-18978417.jpeg"
+  },
+  {
+    "id": 7,
+    "name": "Volumizing Mascara",
+    "price": 799,
+    "category": "Eyes",
+    "description": "Lengthening and volumizing mascara. Clump-free application.",
+    "image": "https://images.pexels.com/photos/28736957/pexels-photo-28736957.jpeg"
+  },
+  {
+    "id": 8,
+    "name": "Vitamin C Serum",
+    "price": 1599,
+    "category": "Skincare",
+    "description": "Brightening serum with 20% Vitamin C. Reduces dark spots and fine lines.",
+    "image": "https://images.pexels.com/photos/28255124/pexels-photo-28255124.jpeg"
+  },
+  {
+    "id": 9,
+    "name": "Coral Blush",
+    "price": 749,
+    "category": "Face",
+    "description": "Warm coral shade for a sun-kissed look. Blends seamlessly.",
+    "image": "https://images.pexels.com/photos/2417855/pexels-photo-2417855.jpeg"
+  },
+  {
+    "id": 10,
+    "name": "HD Foundation",
+    "price": 1199,
+    "category": "Face",
+    "description": "Full coverage foundation with natural finish. Available in 15 shades.",
+    "image": "https://images.pexels.com/photos/12344805/pexels-photo-12344805.jpeg"
+  },
+  {
+    "id": 11,
+    "name": "Berry Lip Gloss",
+    "price": 699,
+    "category": "Lips",
+    "description": "High-shine lip gloss with non-sticky formula. Moisturizing berry tint.",
+    "image": "https://images.pexels.com/photos/27525334/pexels-photo-27525334.jpeg"
+  },
+  {
+    "id": 12,
+    "name": "Gentle Cleanser",
+    "price": 899,
+    "category": "Skincare",
+    "description": "pH-balanced facial cleanser. Removes makeup without stripping skin.",
+    "image": "https://images.pexels.com/photos/14836431/pexels-photo-14836431.jpeg"
+  },
+  {
+    "id": 13,
+    "name": "Brow Pencil",
+    "price": 549,
+    "category": "Eyes",
+    "description": "Precision eyebrow pencil with spoolie brush. Long-lasting formula.",
+    "image": "https://images.pexels.com/photos/3762665/pexels-photo-3762665.jpeg"
+  },
+  {
+    "id": 14,
+    "name": "Makeup Fixer",
+    "price": 899,
+    "category": "Face",
+    "description": "Long-lasting makeup fixer. Keeps makeup fresh for 16+ hours.",
+    "image": "https://images.pexels.com/photos/13964189/pexels-photo-13964189.jpeg"
+  },
+  {
+    "id": 15,
+    "name": "Night Repair Cream",
+    "price": 1799,
+    "category": "Skincare",
+    "description": "Anti-aging night cream with retinol. Reduces wrinkles overnight.",
+    "image": "https://images.pexels.com/photos/19173472/pexels-photo-19173472.jpeg"
+  },
+  {
+    "id": 16,
+    "name": "Highlighter",
+    "price": 849,
+    "category": "Face",
+    "description": "Highlighter palette with champagne glow. Easy to blend.",
+    "image": "https://images.pexels.com/photos/5403546/pexels-photo-5403546.jpeg"
+  },
+  {
+    "id": 17,
+    "name": "Liquid Eyeliner Pen",
+    "price": 649,
+    "category": "Eyes",
+    "description": "Ultra-fine tip liquid liner. Perfect for precise winged looks.",
+    "image": "https://images.pexels.com/photos/2697787/pexels-photo-2697787.jpeg"
+  },
+  {
+    "id": 18,
+    "name": "Plum Lipstick",
+    "price": 899,
+    "category": "Lips",
+    "description": "Deep plum shade with satin finish. Perfect for evening wear.",
+    "image": "https://images.pexels.com/photos/27695994/pexels-photo-27695994.jpeg"
+  },
+  {
+    "id": 19,
+    "name": "Makeup Remover",
+    "price": 699,
+    "category": "Skincare",
+    "description": "Gentle bi-phase makeup remover. Removes waterproof makeup easily.",
+    "image": "https://images.pexels.com/photos/13608711/pexels-photo-13608711.jpeg"
+  },
+  {
+    "id": 20,
+    "name": "Contour Palette",
+    "price": 1299,
+    "category": "Face",
+    "description": "3-shade contour kit with highlighter. Sculpts and defines features.",
+    "image": "https://images.pexels.com/photos/2732197/pexels-photo-2732197.jpeg"
+  },
+  {
+    "id": 21,
+    "name": "Flawless Foundation",
+    "price": 1575,
+    "category": "Face",
+    "description": "Up to 24 hour wear matte foundation with SPF 20 to radiate flawless beauty.",
+    "image": "https://images.pexels.com/photos/5403543/pexels-photo-5403543.jpeg"
+  }
+]
