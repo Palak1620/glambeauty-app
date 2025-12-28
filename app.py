@@ -26,10 +26,34 @@ DB_PATH = "glambeauty.db"
 PRODUCTS_JSON = "products.json"
 THEME_JSON = "theme.json"
 
+# Check if running on Streamlit Cloud
+def is_streamlit_cloud():
+    """Check if app is running on Streamlit Cloud"""
+    return os.getenv("STREAMLIT_SHARING_MODE") is not None or os.getenv("STREAMLIT_RUNTIME_ENV") == "cloud"
+
+# Use secrets for database configuration on cloud
+def get_db_path():
+    """Get database path - use secrets on cloud"""
+    if is_streamlit_cloud():
+        # On Streamlit Cloud, ensure data directory exists
+        data_dir = os.path.join(os.path.expanduser("~"), ".streamlit_data")
+        os.makedirs(data_dir, exist_ok=True)
+        return os.path.join(data_dir, "glambeauty.db")
+    return DB_PATH
+
+def get_products_path():
+    """Get products JSON path"""
+    if is_streamlit_cloud():
+        data_dir = os.path.join(os.path.expanduser("~"), ".streamlit_data")
+        os.makedirs(data_dir, exist_ok=True)
+        return os.path.join(data_dir, "products.json")
+    return PRODUCTS_JSON
+
 # --- DATABASE INITIALIZATION ---
 def init_db():
     """Initialize SQLite database and create tables"""
-    conn = sqlite3.connect(DB_PATH)
+    db_path = get_db_path()
+    conn = sqlite3.connect(db_path)
     c = conn.cursor()
     
     c.execute("""
@@ -78,7 +102,8 @@ def init_db():
 
 def init_users_db():
     """Initialize users table in database"""
-    conn = sqlite3.connect(DB_PATH)
+    db_path = get_db_path()
+    conn = sqlite3.connect(db_path)
     c = conn.cursor()
     
     c.execute("""
@@ -95,6 +120,22 @@ def init_users_db():
             is_admin INTEGER DEFAULT 0
         )
     """)
+    
+    # Create default admin if no users exist
+    c.execute("SELECT COUNT(*) FROM users")
+    user_count = c.fetchone()[0]
+    
+    if user_count == 0 and is_streamlit_cloud():
+        # Create default admin account
+        password_hash = hash_password("Admin@123")
+        created_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        c.execute("""
+            INSERT INTO users (username, email, password_hash, full_name, phone, address, created_at, is_admin)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 1)
+        """, ("admin", "admin@glambeauty.com", password_hash, "Admin User", "+91 9999999999", "Admin Office", created_at))
+        
+        conn.commit()
     
     conn.commit()
     conn.close()
@@ -142,7 +183,8 @@ def validate_password(password):
 def register_user(username, email, password, full_name, phone, address):
     """Register a new user"""
     try:
-        conn = sqlite3.connect(DB_PATH)
+        db_path = get_db_path()
+        conn = sqlite3.connect(db_path)
         c = conn.cursor()
         
         password_hash = hash_password(password)
@@ -168,7 +210,8 @@ def register_user(username, email, password, full_name, phone, address):
 def login_user(username_or_email, password):
     """Authenticate user login"""
     try:
-        conn = sqlite3.connect(DB_PATH)
+        db_path = get_db_path()
+        conn = sqlite3.connect(db_path)
         c = conn.cursor()
         
         password_hash = hash_password(password)
@@ -209,7 +252,8 @@ def login_user(username_or_email, password):
 def update_user_profile(user_id, full_name, phone, address):
     """Update user profile information"""
     try:
-        conn = sqlite3.connect(DB_PATH)
+        db_path = get_db_path()
+        conn = sqlite3.connect(db_path)
         c = conn.cursor()
         
         c.execute("""
@@ -227,7 +271,8 @@ def update_user_profile(user_id, full_name, phone, address):
 def change_password(user_id, old_password, new_password):
     """Change user password"""
     try:
-        conn = sqlite3.connect(DB_PATH)
+        db_path = get_db_path()
+        conn = sqlite3.connect(db_path)
         c = conn.cursor()
         
         old_hash = hash_password(old_password)
@@ -250,7 +295,8 @@ def change_password(user_id, old_password, new_password):
 
 def save_order_to_db(order):
     """Save order to database"""
-    conn = sqlite3.connect(DB_PATH)
+    db_path = get_db_path()
+    conn = sqlite3.connect(db_path)
     c = conn.cursor()
     items_json = json.dumps(order['items'])
     payment_details_json = json.dumps(order.get('payment_details', {}))
@@ -280,7 +326,8 @@ def save_order_to_db(order):
 
 def fetch_orders_from_db():
     """Fetch all orders from database"""
-    conn = sqlite3.connect(DB_PATH)
+    db_path = get_db_path()
+    conn = sqlite3.connect(db_path)
     c = conn.cursor()
     c.execute("SELECT * FROM orders ORDER BY date DESC")
     rows = c.fetchall()
@@ -290,9 +337,15 @@ def fetch_orders_from_db():
 @st.cache_data
 def load_products():
     """Load products from JSON file"""
-    if os.path.exists(PRODUCTS_JSON):
-        with open(PRODUCTS_JSON, 'r') as f:
-            return json.load(f)
+    products_path = get_products_path()
+    if os.path.exists(products_path):
+        with open(products_path, 'r') as f:
+            products = json.load(f)
+            # Ensure all products have stock field
+            for p in products:
+                if 'stock' not in p:
+                    p['stock'] = 15
+            return products
     else:
         default_products = [
             {
@@ -301,7 +354,8 @@ def load_products():
                 "price": 899,
                 "category": "Lips",
                 "description": "Long-lasting matte finish lipstick with rich pigmentation. Perfect for all-day wear.",
-                "image": "https://images.pexels.com/photos/14839822/pexels-photo-14839822.jpeg"
+                "image": "https://images.pexels.com/photos/14839822/pexels-photo-14839822.jpeg",
+                "stock": 15
             },
             {
                 "id": 2,
@@ -309,7 +363,8 @@ def load_products():
                 "price": 749,
                 "category": "Face",
                 "description": "Silky smooth blush that gives you a natural rosy glow. Buildable formula.",
-                "image": "https://images.pexels.com/photos/17354882/pexels-photo-17354882.jpeg"
+                "image": "https://images.pexels.com/photos/17354882/pexels-photo-17354882.jpeg",
+                "stock": 15
             },
             {
                 "id": 3,
@@ -317,7 +372,8 @@ def load_products():
                 "price": 599,
                 "category": "Eyes",
                 "description": "Waterproof gel eyeliner with precision applicator. Smudge-proof formula.",
-                "image": "https://images.pexels.com/photos/2697787/pexels-photo-2697787.jpeg"
+                "image": "https://images.pexels.com/photos/2697787/pexels-photo-2697787.jpeg",
+                "stock": 15
             },
             {
                 "id": 4,
@@ -325,7 +381,8 @@ def load_products():
                 "price": 1299,
                 "category": "Skincare",
                 "description": "24-hour moisturizing cream with hyaluronic acid. Suitable for all skin types.",
-                "image": "https://images.pexels.com/photos/10221859/pexels-photo-10221859.jpeg"
+                "image": "https://images.pexels.com/photos/10221859/pexels-photo-10221859.jpeg",
+                "stock": 15
             },
             {
                 "id": 5,
@@ -333,16 +390,18 @@ def load_products():
                 "price": 899,
                 "category": "Lips",
                 "description": "Everyday nude shade with comfortable matte finish. Non-drying formula.",
-                "image": "https://images.pexels.com/photos/28968376/pexels-photo-28968376.jpeg"
+                "image": "https://images.pexels.com/photos/28968376/pexels-photo-28968376.jpeg",
+                "stock": 15
             }
         ]
-        with open(PRODUCTS_JSON, "w") as f:
+        with open(products_path, "w") as f:
             json.dump(default_products, f, indent=2)
         return default_products
 
 def save_products(products):
     """Save products to JSON file"""
-    with open(PRODUCTS_JSON, "w") as f:
+    products_path = get_products_path()
+    with open(products_path, "w") as f:
         json.dump(products, f, indent=2)
     load_products.clear()
 
@@ -366,7 +425,7 @@ def get_app_url():
         return app_url
     if 'app_url' in st.session_state and st.session_state.app_url:
         return st.session_state.app_url
-    return "https://app.py.streamlit.app"
+    return "http://localhost:8501"
 
 def generate_qr_code(data, product_name):
     """Generate QR code without center overlay"""
@@ -383,8 +442,21 @@ def generate_qr_code(data, product_name):
     return img
 
 def add_to_cart(product):
-    """Add product to cart"""
+    """Add product to cart with stock checking"""
     product_id = product['id']
+    
+    # Check stock
+    current_stock = product.get('stock', 0)
+    cart_quantity = st.session_state.cart_count.get(product_id, 0)
+    
+    if current_stock <= 0:
+        st.error(f"❌ {product['name']} is out of stock!")
+        return
+    
+    if cart_quantity >= current_stock:
+        st.error(f"❌ Cannot add more! Only {current_stock} items in stock")
+        return
+    
     st.session_state.cart.append(product)
     if product_id in st.session_state.cart_count:
         st.session_state.cart_count[product_id] += 1
@@ -407,8 +479,9 @@ def remove_from_cart(index):
     st.rerun()
 
 def save_order(customer_info, cart_items, total_amount, payment_method, payment_details=None, user_id=None):
-    """Save order to database"""
-    conn = sqlite3.connect(DB_PATH)
+    """Save order to database and update stock"""
+    db_path = get_db_path()
+    conn = sqlite3.connect(db_path)
     c = conn.cursor()
     c.execute("SELECT COUNT(*) FROM orders")
     order_count = c.fetchone()[0]
@@ -429,6 +502,15 @@ def save_order(customer_info, cart_items, total_amount, payment_method, payment_
         'user_id': user_id
     }
     save_order_to_db(order)
+    
+    # Update stock for each product
+    for item in cart_items:
+        for product in PRODUCTS:
+            if product['id'] == item['id']:
+                product['stock'] = max(0, product.get('stock', 15) - 1)
+                break
+    save_products(PRODUCTS)
+    
     return order['order_id']
 
 def export_orders_csv():
@@ -642,8 +724,11 @@ if 'product_id' in query_params:
 
 # --- UI COMPONENTS ---
 def display_product_card(product, col):
-    """Display a product card"""
+    """Display a product card with stock info"""
     with col:
+        stock = product.get('stock', 0)
+        is_out_of_stock = stock <= 0
+        
         st.markdown(f"""
             <div class="product-card">
                 <div style='text-align: center; margin-bottom: 15px;'>
@@ -656,12 +741,21 @@ def display_product_card(product, col):
         """, unsafe_allow_html=True)
         
         st.markdown(f"""
-            <div style='padding: 0 10px;'>
-                <img src='{product['image']}' style='width: 100%; height: 280px; object-fit: contain; border-radius: 15px; border: 2px solid #d4a8c8; background: #fefefe;'>
+            <div style='padding: 0 10px; position: relative;'>
+                <img src='{product['image']}' style='width: 100%; height: 280px; object-fit: contain; border-radius: 15px; border: 2px solid #d4a8c8; background: #fefefe; {"opacity: 0.5;" if is_out_of_stock else ""}'>
+                {f"<div style='position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(255,0,0,0.8); color: white; padding: 10px 20px; border-radius: 10px; font-weight: bold; font-size: 18px;'>OUT OF STOCK</div>" if is_out_of_stock else ""}
             </div>
         """, unsafe_allow_html=True)
         
         st.markdown(f"<div style='text-align: center; margin: 15px 0;'><span class='price-tag'>₹{product['price']}</span></div>", unsafe_allow_html=True)
+        
+        # Stock indicator
+        if is_out_of_stock:
+            st.markdown("<p style='text-align: center; color: red; font-weight: bold;'>⚠️ Out of Stock</p>", unsafe_allow_html=True)
+        elif stock <= 5:
+            st.markdown(f"<p style='text-align: center; color: orange; font-weight: bold;'>⚠️ Only {stock} left!</p>", unsafe_allow_html=True)
+        else:
+            st.markdown(f"<p style='text-align: center; color: green;'>✅ In Stock ({stock} available)</p>", unsafe_allow_html=True)
         
         desc = product['description'][:80] + ("..." if len(product['description']) > 80 else "")
         st.markdown(f"<p style='text-align: center; color: #666; font-size: 14px; padding: 0 10px;'>{desc}</p>", unsafe_allow_html=True)
@@ -673,12 +767,16 @@ def display_product_card(product, col):
                 st.session_state.page = 'product'
                 st.rerun()
         with col2:
-            if st.button("🛒 Add", key=f"add_{product['id']}", use_container_width=True):
-                add_to_cart(product)
+            if is_out_of_stock:
+                st.button("🛒 Add", key=f"add_{product['id']}", use_container_width=True, disabled=True)
+            else:
+                if st.button("🛒 Add", key=f"add_{product['id']}", use_container_width=True):
+                    add_to_cart(product)
 
 def display_user_orders(user_id, limit=None):
     """Display orders for specific user"""
-    conn = sqlite3.connect(DB_PATH)
+    db_path = get_db_path()
+    conn = sqlite3.connect(db_path)
     c = conn.cursor()
     
     if limit:
@@ -752,6 +850,17 @@ def login_page():
         
         with tab1:
             st.write("### Sign In to Your Account")
+            
+            # Show default admin credentials on Streamlit Cloud
+            if is_streamlit_cloud():
+                st.info("""
+                🔐 **Default Admin Account** (First time on Streamlit Cloud):
+                - **Username:** admin
+                - **Password:** Admin@123
+                - **Email:** admin@glambeauty.com
+                
+                ⚠️ **Important:** Change the password after first login!
+                """)
             
             with st.form("login_form"):
                 username_or_email = st.text_input("Username or Email *", placeholder="Enter your username or email")
@@ -1082,7 +1191,8 @@ def customer_dashboard():
     st.markdown(f"<h1 style='color: #8b4789;'>👤 Customer Dashboard</h1>", unsafe_allow_html=True)
     st.write(f"### Welcome, {user['full_name']}! 💖")
     
-    conn = sqlite3.connect(DB_PATH)
+    db_path = get_db_path()
+    conn = sqlite3.connect(db_path)
     c = conn.cursor()
     c.execute("SELECT COUNT(*), SUM(total) FROM orders WHERE user_id = ?", (user['user_id'],))
     stats = c.fetchone()
@@ -1132,7 +1242,8 @@ def admin_dashboard():
     st.success(f"Welcome, Admin {st.session_state.user['full_name']}!")
     
     # Statistics
-    conn = sqlite3.connect(DB_PATH)
+    db_path = get_db_path()
+    conn = sqlite3.connect(db_path)
     c = conn.cursor()
     c.execute("SELECT COUNT(*) FROM orders")
     total_orders = c.fetchone()[0]
@@ -1155,7 +1266,7 @@ def admin_dashboard():
     st.divider()
     
     # Tabs for different admin functions
-    tab1, tab2, tab3, tab4 = st.tabs(["📦 Manage Products", "➕ Add Product", "📊 View Orders", "👥 Manage Users"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["📦 Manage Products", "➕ Add Product", "📊 View Orders", "👥 Manage Users", "⚙️ Settings"])
     
     with tab1:
         st.write("### 📦 Product Management")
@@ -1164,17 +1275,33 @@ def admin_dashboard():
             st.info("No products available. Add your first product!")
         else:
             for product in PRODUCTS:
-                with st.expander(f"🛍️ {product['name']} - ₹{product['price']}"):
+                stock = product.get('stock', 0)
+                stock_status = "🔴 Out of Stock" if stock <= 0 else f"🟢 In Stock ({stock})"
+                
+                with st.expander(f"🛍️ {product['name']} - ₹{product['price']} - {stock_status}"):
                     col1, col2 = st.columns([1, 2])
                     
                     with col1:
                         st.image(product['image'], width=200)
+                        st.write(f"**Current Stock:** {stock}")
+                        
+                        # Quick restock button
+                        restock_amount = st.number_input("Restock Amount", min_value=1, max_value=100, value=15, key=f"restock_{product['id']}")
+                        if st.button(f"📦 Restock (+{restock_amount})", key=f"restock_btn_{product['id']}", use_container_width=True):
+                            for p in PRODUCTS:
+                                if p['id'] == product['id']:
+                                    p['stock'] = p.get('stock', 0) + restock_amount
+                                    break
+                            save_products(PRODUCTS)
+                            st.success(f"✅ Added {restock_amount} items to stock!")
+                            st.rerun()
                     
                     with col2:
                         with st.form(f"edit_product_{product['id']}"):
                             st.write("#### Edit Product Details")
                             new_name = st.text_input("Product Name", value=product['name'], key=f"name_{product['id']}")
                             new_price = st.number_input("Price (₹)", value=product['price'], min_value=1, key=f"price_{product['id']}")
+                            new_stock = st.number_input("Stock Quantity", value=product.get('stock', 15), min_value=0, key=f"stock_{product['id']}")
                             new_category = st.selectbox("Category", ["Lips", "Face", "Eyes", "Skincare", "Nails", "Fragrance", "Tools"], 
                                                        index=["Lips", "Face", "Eyes", "Skincare", "Nails", "Fragrance", "Tools"].index(product['category']) if product['category'] in ["Lips", "Face", "Eyes", "Skincare", "Nails", "Fragrance", "Tools"] else 0,
                                                        key=f"cat_{product['id']}")
@@ -1193,6 +1320,7 @@ def admin_dashboard():
                                     if p['id'] == product['id']:
                                         p['name'] = new_name
                                         p['price'] = new_price
+                                        p['stock'] = new_stock
                                         p['category'] = new_category
                                         p['description'] = new_description
                                         p['image'] = new_image
@@ -1216,6 +1344,7 @@ def admin_dashboard():
             
             new_name = st.text_input("Product Name *", placeholder="e.g., Ruby Red Lipstick")
             new_price = st.number_input("Price (₹) *", min_value=1, value=499)
+            new_stock = st.number_input("Initial Stock *", min_value=0, value=15)
             new_category = st.selectbox("Category *", ["Lips", "Face", "Eyes", "Skincare", "Nails", "Fragrance", "Tools"])
             new_description = st.text_area("Description *", placeholder="Enter product description...")
             new_image = st.text_input("Image URL *", placeholder="https://example.com/image.jpg")
@@ -1235,6 +1364,7 @@ def admin_dashboard():
                         "id": new_id,
                         "name": new_name,
                         "price": new_price,
+                        "stock": new_stock,
                         "category": new_category,
                         "description": new_description,
                         "image": new_image
@@ -1242,7 +1372,7 @@ def admin_dashboard():
                     
                     PRODUCTS.append(new_product)
                     save_products(PRODUCTS)
-                    st.success(f"✅ Product '{new_name}' added successfully!")
+                    st.success(f"✅ Product '{new_name}' added successfully with {new_stock} items in stock!")
                     st.balloons()
                     st.rerun()
     
@@ -1312,7 +1442,8 @@ def admin_dashboard():
     with tab4:
         st.write("### 👥 User Management")
         
-        conn = sqlite3.connect(DB_PATH)
+        db_path = get_db_path()
+        conn = sqlite3.connect(db_path)
         c = conn.cursor()
         c.execute("SELECT user_id, username, email, full_name, phone, created_at, is_admin FROM users ORDER BY created_at DESC")
         users = c.fetchall()
@@ -1343,13 +1474,67 @@ def admin_dashboard():
                     
                     if not is_admin:
                         if st.button(f"🧑‍💼 Make Admin", key=f"admin_{user_id}"):
-                            conn = sqlite3.connect(DB_PATH)
+                            db_path = get_db_path()
+                            conn = sqlite3.connect(db_path)
                             c = conn.cursor()
                             c.execute("UPDATE users SET is_admin = 1 WHERE user_id = ?", (user_id,))
                             conn.commit()
                             conn.close()
                             st.success(f"✅ {username} is now an admin!")
                             st.rerun()
+    
+    with tab5:
+        st.write("### ⚙️ App Configuration")
+        
+        st.write("#### 🔗 QR Code URL Configuration")
+        st.info("Configure the base URL for QR codes. This should be your Streamlit app's public URL.")
+        
+        current_url = get_app_url()
+        st.write(f"**Current URL:** `{current_url}`")
+        
+        with st.form("url_config_form"):
+            st.write("**Update App URL:**")
+            new_url = st.text_input(
+                "Streamlit App URL *",
+                value=current_url,
+                placeholder="https://your-app-name.streamlit.app",
+                help="Enter your app's public URL from Streamlit Cloud"
+            )
+            
+            st.caption("📝 **How to find your app URL:**")
+            st.caption("1. Go to your Streamlit Cloud dashboard")
+            st.caption("2. Find your deployed app")
+            st.caption("3. Copy the URL (e.g., https://your-app-name.streamlit.app)")
+            
+            if st.form_submit_button("💾 Save URL", use_container_width=True, type="primary"):
+                if new_url and new_url.startswith(('http://', 'https://')):
+                    st.session_state.app_url = new_url
+                    st.success(f"✅ App URL updated to: {new_url}")
+                    st.info("🔄 QR codes will now use this URL")
+                else:
+                    st.error("⚠️ Please enter a valid URL starting with http:// or https://")
+        
+        st.divider()
+        
+        st.write("#### 📊 Stock Management Summary")
+        
+        # Calculate stock statistics
+        total_stock = sum(p.get('stock', 0) for p in PRODUCTS)
+        out_of_stock = len([p for p in PRODUCTS if p.get('stock', 0) == 0])
+        low_stock = len([p for p in PRODUCTS if 0 < p.get('stock', 0) <= 5])
+        
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Total Items in Stock", total_stock)
+        with col2:
+            st.metric("Out of Stock Products", out_of_stock, delta="-" if out_of_stock > 0 else None)
+        with col3:
+            st.metric("Low Stock Items (≤5)", low_stock, delta="-" if low_stock > 0 else None)
+        
+        if out_of_stock > 0 or low_stock > 0:
+            st.warning("⚠️ Some products need restocking! Check the 'Manage Products' tab.")
+        else:
+            st.success("✅ All products are well stocked!")
 
 def profile_page():
     """Display user profile"""
