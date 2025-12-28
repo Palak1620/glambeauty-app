@@ -9,6 +9,8 @@ from datetime import datetime
 import csv
 import pandas as pd
 import sqlite3
+import hashlib
+import re
 
 def safe_json_loads(s):
     """Safely parse a JSON string. Returns {} if invalid or empty."""
@@ -42,7 +44,8 @@ def init_db():
             total INTEGER,
             payment_method TEXT,
             payment_details_json TEXT,
-            status TEXT
+            status TEXT,
+            user_id INTEGER
         )
     """)
     
@@ -63,17 +66,15 @@ def init_db():
         except sqlite3.OperationalError:
             pass
     
+    if 'user_id' not in columns:
+        try:
+            c.execute("ALTER TABLE orders ADD COLUMN user_id INTEGER")
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass
+    
     conn.commit()
     conn.close()
-
-import streamlit as st
-import sqlite3
-import hashlib
-import re
-from datetime import datetime
-
-# --- DATABASE INITIALIZATION FOR USERS ---
-DB_PATH = "glambeauty.db"
 
 def init_users_db():
     """Initialize users table in database"""
@@ -109,8 +110,22 @@ def validate_email(email):
 
 def validate_phone(phone):
     """Validate phone number format"""
+    clean_phone = phone.replace(" ", "").replace("-", "")
     pattern = r'^(\+91)?[6-9]\d{9}$'
-    return re.match(pattern, phone.replace(" ", "").replace("-", "")) is not None
+    return re.match(pattern, clean_phone) is not None
+
+def validate_name(name):
+    """Validate name format"""
+    if len(name) < 2:
+        return False
+    pattern = r'^[a-zA-Z\s]+$'
+    return re.match(pattern, name) is not None
+
+def validate_address(address):
+    """Validate address format"""
+    if len(address) < 10:
+        return False
+    return True
 
 def validate_password(password):
     """Validate password strength"""
@@ -167,7 +182,6 @@ def login_user(username_or_email, password):
         user = c.fetchone()
         
         if user:
-            # Update last login
             c.execute("""
                 UPDATE users 
                 SET last_login = ? 
@@ -234,309 +248,6 @@ def change_password(user_id, old_password, new_password):
     except Exception as e:
         return False, f"Error: {str(e)}"
 
-# --- LOGIN PAGE UI ---
-def login_page():
-    """Display login/registration page"""
-    st.markdown("""
-        <style>
-        .login-container {
-            max-width: 500px;
-            margin: 0 auto;
-            padding: 40px;
-            background: linear-gradient(135deg, #ffeef8 0%, #fff5f7 100%);
-            border-radius: 20px;
-            box-shadow: 0 8px 16px rgba(0,0,0,0.1);
-        }
-        .login-header {
-            text-align: center;
-            color: #d81b60;
-            font-size: 36px;
-            font-weight: bold;
-            margin-bottom: 10px;
-        }
-        .login-subtitle {
-            text-align: center;
-            color: #666;
-            margin-bottom: 30px;
-        }
-        </style>
-    """, unsafe_allow_html=True)
-    
-    col1, col2, col3 = st.columns([1, 2, 1])
-    
-    with col2:
-        st.markdown('<div class="login-container">', unsafe_allow_html=True)
-        
-        # Logo and Title
-        st.markdown('<h1 class="login-header">💄 GlamBeauty</h1>', unsafe_allow_html=True)
-        st.markdown('<p class="login-subtitle">Welcome to Premium Cosmetics</p>', unsafe_allow_html=True)
-        
-        # Tabs for Login and Register
-        tab1, tab2 = st.tabs(["🔐 Login", "📝 Register"])
-        
-        # --- LOGIN TAB ---
-        with tab1:
-            st.write("### Sign In to Your Account")
-            
-            with st.form("login_form"):
-                username_or_email = st.text_input(
-                    "Username or Email *",
-                    placeholder="Enter your username or email"
-                )
-                password = st.text_input(
-                    "Password *",
-                    type="password",
-                    placeholder="Enter your password"
-                )
-                
-                remember_me = st.checkbox("Remember me")
-                
-                col_a, col_b = st.columns(2)
-                with col_a:
-                    login_btn = st.form_submit_button("🔓 Login", use_container_width=True, type="primary")
-                with col_b:
-                    guest_btn = st.form_submit_button("👤 Guest", use_container_width=True)
-                
-                forgot_password = st.form_submit_button("🔑 Forgot Password?")
-            
-            if login_btn:
-                if not username_or_email or not password:
-                    st.error("⚠️ Please fill in all fields")
-                else:
-                    success, message, user_data = login_user(username_or_email, password)
-                    
-                    if success:
-                        st.session_state.logged_in = True
-                        st.session_state.user = user_data
-                        st.session_state.page = 'home'
-                        st.success(f"✅ {message}")
-                        st.balloons()
-                        st.rerun()
-                    else:
-                        st.error(f"❌ {message}")
-            
-            if guest_btn:
-                st.session_state.logged_in = False
-                st.session_state.user = None
-                st.session_state.page = 'home'
-                st.info("👤 Continuing as guest")
-                st.rerun()
-            
-            if forgot_password:
-                st.info("📧 Password reset feature coming soon! Please contact support.")
-        
-        # --- REGISTER TAB ---
-        with tab2:
-            st.write("### Create Your Account")
-            
-            with st.form("register_form"):
-                reg_username = st.text_input(
-                    "Username *",
-                    placeholder="Choose a unique username",
-                    max_chars=20
-                )
-                
-                reg_email = st.text_input(
-                    "Email *",
-                    placeholder="your.email@example.com"
-                )
-                
-                reg_full_name = st.text_input(
-                    "Full Name *",
-                    placeholder="Enter your full name"
-                )
-                
-                reg_phone = st.text_input(
-                    "Phone Number *",
-                    placeholder="+91 XXXXX XXXXX"
-                )
-                
-                reg_address = st.text_area(
-                    "Address",
-                    placeholder="Your delivery address (optional)"
-                )
-                
-                reg_password = st.text_input(
-                    "Password *",
-                    type="password",
-                    placeholder="Create a strong password"
-                )
-                
-                reg_confirm_password = st.text_input(
-                    "Confirm Password *",
-                    type="password",
-                    placeholder="Re-enter your password"
-                )
-                
-                st.caption("Password must contain at least 8 characters, including uppercase, lowercase, and numbers")
-                
-                agree_terms = st.checkbox("I agree to the Terms & Conditions and Privacy Policy *")
-                
-                register_btn = st.form_submit_button("✨ Create Account", use_container_width=True, type="primary")
-            
-            if register_btn:
-                # Validation
-                errors = []
-                
-                if not all([reg_username, reg_email, reg_full_name, reg_phone, reg_password, reg_confirm_password]):
-                    errors.append("Please fill in all required fields")
-                
-                if len(reg_username) < 3:
-                    errors.append("Username must be at least 3 characters long")
-                
-                if not validate_email(reg_email):
-                    errors.append("Invalid email format")
-                
-                if not validate_phone(reg_phone):
-                    errors.append("Invalid phone number format (use +91 XXXXXXXXXX)")
-                
-                is_valid_password, password_message = validate_password(reg_password)
-                if not is_valid_password:
-                    errors.append(password_message)
-                
-                if reg_password != reg_confirm_password:
-                    errors.append("Passwords do not match")
-                
-                if not agree_terms:
-                    errors.append("You must agree to the Terms & Conditions")
-                
-                if errors:
-                    for error in errors:
-                        st.error(f"⚠️ {error}")
-                else:
-                    success, message = register_user(
-                        reg_username,
-                        reg_email,
-                        reg_password,
-                        reg_full_name,
-                        reg_phone,
-                        reg_address
-                    )
-                    
-                    if success:
-                        st.success(f"✅ {message}")
-                        st.balloons()
-                        st.info("👉 Please switch to the Login tab to sign in")
-                    else:
-                        st.error(f"❌ {message}")
-        
-        st.markdown('</div>', unsafe_allow_html=True)
-    
-    # Benefits section
-    st.write("---")
-    st.write("### 🌟 Why Shop With Us?")
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.write("#### 🔒 Secure")
-        st.write("Your data is encrypted and safe")
-    
-    with col2:
-        st.write("#### 🚚 Fast Delivery")
-        st.write("Quick shipping across India")
-    
-    with col3:
-        st.write("#### 💝 Quality")
-        st.write("100% authentic products")
-
-# --- PROFILE PAGE ---
-def profile_page():
-    """Display user profile page"""
-    if not st.session_state.get('logged_in'):
-        st.warning("⚠️ Please login to view your profile")
-        if st.button("Go to Login"):
-            st.session_state.page = 'login'
-            st.rerun()
-        return
-    
-    user = st.session_state.user
-    
-    st.markdown(f"<h1 style='color: #d81b60;'>👤 My Profile</h1>", unsafe_allow_html=True)
-    st.write(f"### Welcome, {user['full_name']}! 💖")
-    
-    tab1, tab2 = st.tabs(["📝 Profile Information", "🔐 Change Password"])
-    
-    with tab1:
-        st.write("#### Update Your Information")
-        
-        with st.form("profile_form"):
-            full_name = st.text_input("Full Name", value=user.get('full_name', ''))
-            phone = st.text_input("Phone Number", value=user.get('phone', ''))
-            address = st.text_area("Address", value=user.get('address', ''))
-            
-            st.write("**Account Information:**")
-            st.info(f"**Username:** {user['username']}")
-            st.info(f"**Email:** {user['email']}")
-            
-            if st.form_submit_button("💾 Save Changes", use_container_width=True, type="primary"):
-                if not validate_phone(phone):
-                    st.error("⚠️ Invalid phone number format")
-                else:
-                    success, message = update_user_profile(
-                        user['user_id'],
-                        full_name,
-                        phone,
-                        address
-                    )
-                    
-                    if success:
-                        st.session_state.user['full_name'] = full_name
-                        st.session_state.user['phone'] = phone
-                        st.session_state.user['address'] = address
-                        st.success(f"✅ {message}")
-                        st.rerun()
-                    else:
-                        st.error(f"❌ {message}")
-    
-    with tab2:
-        st.write("#### Change Your Password")
-        
-        with st.form("password_form"):
-            old_password = st.text_input("Current Password", type="password")
-            new_password = st.text_input("New Password", type="password")
-            confirm_password = st.text_input("Confirm New Password", type="password")
-            
-            st.caption("Password must contain at least 8 characters, including uppercase, lowercase, and numbers")
-            
-            if st.form_submit_button("🔑 Change Password", use_container_width=True, type="primary"):
-                if not all([old_password, new_password, confirm_password]):
-                    st.error("⚠️ Please fill in all fields")
-                elif new_password != confirm_password:
-                    st.error("⚠️ New passwords do not match")
-                else:
-                    is_valid, password_message = validate_password(new_password)
-                    if not is_valid:
-                        st.error(f"⚠️ {password_message}")
-                    else:
-                        success, message = change_password(
-                            user['user_id'],
-                            old_password,
-                            new_password
-                        )
-                        
-                        if success:
-                            st.success(f"✅ {message}")
-                        else:
-                            st.error(f"❌ {message}")
-
-# Initialize database
-init_users_db()
-
-# Initialize session state
-if 'logged_in' not in st.session_state:
-    st.session_state.logged_in = False
-if 'user' not in st.session_state:
-    st.session_state.user = None
-if 'page' not in st.session_state:
-    st.session_state.page = 'login'
-
-# Display appropriate page
-if st.session_state.page == 'login':
-    login_page()
-elif st.session_state.page == 'profile':
-    profile_page()
-
-
 def save_order_to_db(order):
     """Save order to database"""
     conn = sqlite3.connect(DB_PATH)
@@ -547,8 +258,8 @@ def save_order_to_db(order):
     c.execute("""
         INSERT INTO orders (
             order_id, date, customer_name, email, 
-            phone, address, items_json, total, payment_method, payment_details_json, status
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            phone, address, items_json, total, payment_method, payment_details_json, status, user_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         order['order_id'],
         order['order_date'],
@@ -560,7 +271,8 @@ def save_order_to_db(order):
         order['total_amount'],
         order['payment_method'],
         payment_details_json,
-        order['status']
+        order['status'],
+        order.get('user_id')
     ))
     
     conn.commit()
@@ -575,7 +287,6 @@ def fetch_orders_from_db():
     conn.close()
     return rows
 
-# --- DATA LOADING FUNCTIONS ---
 @st.cache_data
 def load_products():
     """Load products from JSON file"""
@@ -642,113 +353,23 @@ def load_theme():
         with open(THEME_JSON, "r") as f:
             return json.load(f)
     return {
-        "primary_color": "#d81b60",
-        "background": "linear-gradient(135deg, #ffeef8 0%, #fff5f7 100%)",
+        "primary_color": "#8b4789",
+        "background": "#ffffff",
         "card_shadow": "0 4px 6px rgba(0,0,0,0.1)"
     }
 
-# Initialize database and load data
-init_db()
-PRODUCTS = load_products()
-THEME = load_theme()
-
-# --- PAGE CONFIG & CSS ---
-st.set_page_config(
-    page_title="GlamBeauty - Cosmetics Store",
-    page_icon="💄",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
-
-st.markdown(f"""
-    <style>
-    .main {{
-        padding: 0rem 1rem;
-    }}
-    .product-card {{
-        border: 2px solid #f0f0f0;
-        border-radius: 15px;
-        padding: 20px;
-        margin: 10px;
-        background: {THEME['background']};
-        box-shadow: {THEME['card_shadow']};
-        transition: transform 0.3s;
-    }}
-    .product-card:hover {{
-        transform: translateY(-5px);
-        box-shadow: 0 6px 12px rgba(0,0,0,0.15);
-    }}
-    .price-tag {{
-        font-size: 24px;
-        color: {THEME['primary_color']};
-        font-weight: bold;
-    }}
-    .header-title {{
-        text-align: center;
-        color: {THEME['primary_color']};
-        font-size: 48px;
-        font-weight: bold;
-        margin-bottom: 10px;
-    }}
-    .subtitle {{
-        text-align: center;
-        color: {THEME['primary_color']};
-        font-size: 18px;
-        margin-bottom: 30px;
-    }}
-    .stImage img {{
-        object-fit: cover !important;
-        height: 280px !important;
-        width: 100% !important;
-        border-radius: 10px;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-    }}
-    div[data-testid="column"]:first-child .stImage img {{
-        height: 500px !important;
-    }}
-    .cart-thumbnail img {{
-        height: 120px !important;
-        width: 120px !important;
-        object-fit: cover !important;
-        border-radius: 8px;
-    }}
-    </style>
-""", unsafe_allow_html=True)
-
-# --- SESSION STATE INITIALIZATION ---
-if 'cart' not in st.session_state:
-    st.session_state.cart = []
-if 'page' not in st.session_state:
-    st.session_state.page = 'home'
-if 'selected_product' not in st.session_state:
-    st.session_state.selected_product = None
-if 'customer_info' not in st.session_state:
-    st.session_state.customer_info = {}
-if 'cart_count' not in st.session_state:
-    st.session_state.cart_count = {}
-
-# --- HANDLE QR CODE SCAN (Query Parameters) ---
-query_params = st.query_params
-if 'product_id' in query_params:
-    try:
-        product_id = int(query_params['product_id'])
-        if any(p['id'] == product_id for p in PRODUCTS):
-            st.session_state.selected_product = product_id
-            st.session_state.page = 'product'
-        st.query_params.clear()
-    except (ValueError, TypeError):
-        pass
-
-# --- UTILITY FUNCTIONS ---
 def get_app_url():
     """Get the current Streamlit app URL"""
-    try:
-        return "https://glambeauty.streamlit.app"
-    except:
-        return "http://localhost:8501"
+    import os
+    app_url = os.getenv('STREAMLIT_APP_URL')
+    if app_url:
+        return app_url
+    if 'app_url' in st.session_state and st.session_state.app_url:
+        return st.session_state.app_url
+    return "http://localhost:8501"
 
 def generate_qr_code(data, product_name):
-    """Generate QR code with branded overlay"""
+    """Generate QR code without center overlay"""
     qr = qrcode.QRCode(
         version=1,
         error_correction=qrcode.constants.ERROR_CORRECT_H,
@@ -757,17 +378,9 @@ def generate_qr_code(data, product_name):
     )
     qr.add_data(data)
     qr.make(fit=True)
-    img = qr.make_image(fill_color=THEME['primary_color'], back_color="white")
+    img = qr.make_image(fill_color="#8b4789", back_color="white")
     img = img.convert('RGB')
-    width, height = img.size
-    logo_size = width // 5
-    overlay = Image.new('RGBA', (logo_size, logo_size), (255, 255, 255, 0))
-    draw = ImageDraw.Draw(overlay)
-    draw.ellipse([0, 0, logo_size, logo_size], fill='#ffffff', outline=THEME['primary_color'], width=3)
-    img_with_overlay = img.copy()
-    pos = ((width - logo_size) // 2, (height - logo_size) // 2)
-    img_with_overlay.paste(overlay, pos, overlay)
-    return img_with_overlay
+    return img
 
 def add_to_cart(product):
     """Add product to cart"""
@@ -777,7 +390,9 @@ def add_to_cart(product):
         st.session_state.cart_count[product_id] += 1
     else:
         st.session_state.cart_count[product_id] = 1
+    st.session_state.cart_update_trigger += 1
     st.success(f"✅ {product['name']} added to cart!")
+    st.rerun()
 
 def remove_from_cart(index):
     """Remove product from cart"""
@@ -788,9 +403,10 @@ def remove_from_cart(index):
         if st.session_state.cart_count[product_id] <= 0:
             del st.session_state.cart_count[product_id]
     st.session_state.cart.pop(index)
+    st.session_state.cart_update_trigger += 1
     st.rerun()
 
-def save_order(customer_info, cart_items, total_amount, payment_method, payment_details=None):
+def save_order(customer_info, cart_items, total_amount, payment_method, payment_details=None, user_id=None):
     """Save order to database"""
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
@@ -809,7 +425,8 @@ def save_order(customer_info, cart_items, total_amount, payment_method, payment_
         'total_amount': total_amount,
         'payment_method': payment_method,
         'payment_details': payment_details if payment_details else {},
-        'status': 'Confirmed'
+        'status': 'Confirmed',
+        'user_id': user_id
     }
     save_order_to_db(order)
     return order['order_id']
@@ -834,33 +451,224 @@ def export_orders_csv():
     
     return output.getvalue()
 
-def export_cart_json():
-    """Export cart to JSON format"""
-    cart_data = {
-        'cart_items': st.session_state.cart,
-        'total_items': len(st.session_state.cart),
-        'total_amount': sum(item['price'] for item in st.session_state.cart),
-        'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+# Initialize database and load data
+init_db()
+init_users_db()
+PRODUCTS = load_products()
+THEME = load_theme()
+
+# --- PAGE CONFIG & ENHANCED CSS ---
+st.set_page_config(
+    page_title="GlamBeauty - Cosmetics Store",
+    page_icon="💄",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+st.markdown("""
+    <style>
+    .main {
+        background: linear-gradient(135deg, #fef9f3 0%, #fef3f8 25%, #f3f9fe 50%, #fef6f0 75%, #f8f3fe 100%);
+        padding: 1rem 2rem;
     }
-    return json.dumps(cart_data, indent=2)
+    
+    [data-testid="stSidebar"] {
+        background: linear-gradient(180deg, #e8f4f8 0%, #f0e8f8 50%, #f8f0e8 100%);
+        border-right: 4px solid #b8a8d8;
+    }
+    
+    .product-card {
+        background: #ffffff !important;
+        border: 3px solid #d4a8c8 !important;
+        border-radius: 25px !important;
+        padding: 30px !important;
+        margin: 20px 10px !important;
+        box-shadow: 0 10px 30px rgba(139, 71, 137, 0.15) !important;
+        transition: all 0.4s ease !important;
+    }
+    
+    .product-card:hover {
+        transform: translateY(-8px) !important;
+        box-shadow: 0 15px 40px rgba(139, 71, 137, 0.25) !important;
+        border-color: #b89cc8 !important;
+    }
+    
+    .price-tag {
+        font-size: 28px;
+        color: #ffffff;
+        font-weight: 900;
+        background: linear-gradient(135deg, #9b5d9d 0%, #7a4a7c 100%);
+        padding: 10px 24px;
+        border-radius: 15px;
+        display: inline-block;
+        border: 3px solid #b89cc8;
+        box-shadow: 0 6px 15px rgba(139, 71, 137, 0.3);
+    }
+    
+    .header-title {
+        text-align: center;
+        background: linear-gradient(135deg, #8b4789 0%, #6b3669 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        font-size: 52px;
+        font-weight: bold;
+        margin-bottom: 10px;
+    }
+    
+    .subtitle {
+        text-align: center;
+        color: #7a4a7c;
+        font-size: 20px;
+        margin-bottom: 30px;
+        font-weight: 600;
+    }
+    
+    .stButton > button {
+        background: linear-gradient(135deg, #8b4789 0%, #9b5d9d 100%) !important;
+        color: white !important;
+        border: 2px solid #b89cc8 !important;
+        border-radius: 12px !important;
+        padding: 12px 24px !important;
+        font-weight: 700 !important;
+        box-shadow: 0 4px 12px rgba(139, 71, 137, 0.3) !important;
+        transition: all 0.3s ease !important;
+    }
+    
+    .stButton > button:hover {
+        background: linear-gradient(135deg, #9b5d9d 0%, #8b4789 100%) !important;
+        transform: translateY(-2px) !important;
+        box-shadow: 0 6px 16px rgba(139, 71, 137, 0.4) !important;
+    }
+    
+    .stAlert {
+        border-radius: 15px !important;
+        border-left: 5px solid #8b4789 !important;
+        background: #ffffff !important;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.08) !important;
+    }
+    
+    .stTabs [data-baseweb="tab-list"] {
+        background: #ffffff;
+        border-radius: 15px;
+        padding: 10px;
+        border: 2px solid #d4a8c8;
+    }
+    
+    .stTabs [data-baseweb="tab"] {
+        background: #fef5f9;
+        border-radius: 10px;
+        color: #8b4789;
+        font-weight: 600;
+    }
+    
+    .stTabs [aria-selected="true"] {
+        background: linear-gradient(135deg, #8b4789 0%, #9b5d9d 100%);
+        color: white !important;
+    }
+    
+    .stTextInput > div > div > input,
+    .stTextArea > div > div > textarea,
+    .stSelectbox > div > div > select {
+        background: #ffffff !important;
+        border: 2px solid #d4a8c8 !important;
+        border-radius: 12px !important;
+        padding: 12px !important;
+        color: #333 !important;
+    }
+    
+    .stTextInput > div > div > input:focus,
+    .stTextArea > div > div > textarea:focus {
+        border-color: #8b4789 !important;
+        box-shadow: 0 0 0 2px rgba(139, 71, 137, 0.2) !important;
+    }
+    
+    .streamlit-expanderHeader {
+        background: #ffffff !important;
+        border: 2px solid #d4a8c8 !important;
+        border-radius: 12px !important;
+        color: #8b4789 !important;
+        font-weight: 600 !important;
+    }
+    
+    hr {
+        border-color: #d4a8c8 !important;
+        margin: 30px 0 !important;
+    }
+    
+    .cart-item-box {
+        background: #ffffff;
+        border: 2px solid #d4a8c8;
+        border-radius: 15px;
+        padding: 20px;
+        margin: 15px 0;
+        box-shadow: 0 4px 12px rgba(139, 71, 137, 0.1);
+    }
+    </style>
+""", unsafe_allow_html=True)
+
+# --- SESSION STATE ---
+if 'cart' not in st.session_state:
+    st.session_state.cart = []
+if 'page' not in st.session_state:
+    st.session_state.page = 'login'
+if 'selected_product' not in st.session_state:
+    st.session_state.selected_product = None
+if 'customer_info' not in st.session_state:
+    st.session_state.customer_info = {}
+if 'cart_count' not in st.session_state:
+    st.session_state.cart_count = {}
+if 'logged_in' not in st.session_state:
+    st.session_state.logged_in = False
+if 'user' not in st.session_state:
+    st.session_state.user = None
+if 'cart_update_trigger' not in st.session_state:
+    st.session_state.cart_update_trigger = 0
+if 'checkout_as_guest' not in st.session_state:
+    st.session_state.checkout_as_guest = False
+if 'app_url' not in st.session_state:
+    st.session_state.app_url = None
+
+# --- HANDLE QR CODE ---
+query_params = st.query_params
+if 'product_id' in query_params:
+    try:
+        product_id = int(query_params['product_id'])
+        if any(p['id'] == product_id for p in PRODUCTS):
+            st.session_state.selected_product = product_id
+            st.session_state.page = 'product'
+        st.query_params.clear()
+    except (ValueError, TypeError):
+        pass
 
 # --- UI COMPONENTS ---
 def display_product_card(product, col):
-    """Display a single product card"""
+    """Display a product card"""
     with col:
         st.markdown(f"""
             <div class="product-card">
-                <h3 style="color: {THEME['primary_color']}; margin-bottom: 10px;">{product['name']}</h3>
-                <p style="color: #666; font-size: 12px; margin-bottom: 10px;">{product['category']}</p>
+                <div style='text-align: center; margin-bottom: 15px;'>
+                    <h3 style="color: #8b4789; margin-bottom: 8px;">{product['name']}</h3>
+                    <span style="background: #e8d5f2; padding: 5px 15px; border-radius: 20px; color: #8b4789; font-size: 12px; font-weight: 600;">
+                        {product['category']}
+                    </span>
+                </div>
             </div>
         """, unsafe_allow_html=True)
-        st.image(product['image'], use_container_width=True)
-        st.markdown(f"<p class='price-tag'>₹{product['price']}</p>", unsafe_allow_html=True)
+        
+        st.markdown(f"""
+            <div style='padding: 0 10px;'>
+                <img src='{product['image']}' style='width: 100%; height: 280px; object-fit: contain; border-radius: 15px; border: 2px solid #d4a8c8; background: #fefefe;'>
+            </div>
+        """, unsafe_allow_html=True)
+        
+        st.markdown(f"<div style='text-align: center; margin: 15px 0;'><span class='price-tag'>₹{product['price']}</span></div>", unsafe_allow_html=True)
+        
         desc = product['description'][:80] + ("..." if len(product['description']) > 80 else "")
-        st.write(desc)
+        st.markdown(f"<p style='text-align: center; color: #666; font-size: 14px; padding: 0 10px;'>{desc}</p>", unsafe_allow_html=True)
+        
         col1, col2 = st.columns(2)
         with col1:
-            if st.button("View Details", key=f"view_{product['id']}", use_container_width=True):
+            if st.button("👁️ View", key=f"view_{product['id']}", use_container_width=True):
                 st.session_state.selected_product = product['id']
                 st.session_state.page = 'product'
                 st.rerun()
@@ -868,17 +676,190 @@ def display_product_card(product, col):
             if st.button("🛒 Add", key=f"add_{product['id']}", use_container_width=True):
                 add_to_cart(product)
 
+def display_user_orders(user_id, limit=None):
+    """Display orders for specific user"""
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    
+    if limit:
+        c.execute("SELECT * FROM orders WHERE user_id = ? ORDER BY date DESC LIMIT ?", (user_id, limit))
+    else:
+        c.execute("SELECT * FROM orders WHERE user_id = ? ORDER BY date DESC", (user_id,))
+    
+    rows = c.fetchall()
+    conn.close()
+    
+    if not rows:
+        st.info("You haven't placed any orders yet. Start shopping!")
+        if st.button("Start Shopping", key="start_shop_orders"):
+            st.session_state.page = 'home'
+            st.rerun()
+        return
+    
+    st.write(f"### Total Orders: {len(rows)}")
+    
+    for row in rows:
+        if len(row) >= 11:
+            order_id, date, name, email, phone, address, items_json, total, payment_method, payment_details_json, status = row[:11]
+            payment_details = safe_json_loads(payment_details_json)
+        else:
+            order_id, date, name, email, phone, address, items_json, total, status = row[:9]
+            payment_method = "Cash on Delivery"
+            payment_details = {}
+        
+        items = safe_json_loads(items_json)
+        
+        with st.expander(f"🛍️ Order #{order_id} - {date} - ₹{total} - {status}"):
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.write("#### 📍 Delivery Details")
+                st.write(f"**Address:** {address}")
+                st.write(f"**Phone:** {phone}")
+            
+            with col2:
+                st.write("#### 💳 Payment Details")
+                st.write(f"**Status:** {status}")
+                st.write(f"**Payment Method:** {payment_method}")
+            
+            st.divider()
+            st.write("#### 🛍️ Order Items:")
+            for item in items:
+                c1, c2, c3 = st.columns([2, 4, 2])
+                with c1:
+                    st.image(item['image'], width=80)
+                with c2:
+                    st.write(f"**{item['name']}**")
+                    st.write(f"{item['category']}")
+                with c3:
+                    st.write(f"₹{item['price']}")
+
 # --- PAGE FUNCTIONS ---
+def login_page():
+    """Display login/registration page"""
+    col1, col2, col3 = st.columns([1, 2, 1])
+    
+    with col2:
+        st.markdown("""
+            <div style='padding: 40px; background: #ffffff; border-radius: 20px; box-shadow: 0 8px 24px rgba(0,0,0,0.08); border: 3px solid #d4a8c8;'>
+                <h1 style='text-align: center; color: #8b4789; font-size: 36px; margin-bottom: 10px;'>💄 GlamBeauty</h1>
+                <p style='text-align: center; color: #666; margin-bottom: 30px;'>Welcome to Premium Cosmetics</p>
+            </div>
+        """, unsafe_allow_html=True)
+        
+        st.write("")
+        tab1, tab2 = st.tabs(["🔐 Login", "📝 Register"])
+        
+        with tab1:
+            st.write("### Sign In to Your Account")
+            
+            with st.form("login_form"):
+                username_or_email = st.text_input("Username or Email *", placeholder="Enter your username or email")
+                password = st.text_input("Password *", type="password", placeholder="Enter your password")
+                
+                col_a, col_b = st.columns(2)
+                with col_a:
+                    login_btn = st.form_submit_button("🔐 Login", use_container_width=True, type="primary")
+                with col_b:
+                    guest_btn = st.form_submit_button("👤 Guest", use_container_width=True)
+            
+            if login_btn:
+                if not username_or_email or not password:
+                    st.error("⚠️ Please fill in all fields")
+                else:
+                    success, message, user_data = login_user(username_or_email, password)
+                    if success:
+                        st.session_state.logged_in = True
+                        st.session_state.user = user_data
+                        if user_data['is_admin']:
+                            st.session_state.page = 'admin_dashboard'
+                        else:
+                            st.session_state.page = 'customer_dashboard'
+                        st.success(f"✅ {message}")
+                        st.balloons()
+                        st.rerun()
+                    else:
+                        st.error(f"❌ {message}")
+            
+            if guest_btn:
+                st.session_state.logged_in = False
+                st.session_state.user = None
+                st.session_state.page = 'home'
+                st.info("👤 Continuing as guest")
+                st.rerun()
+        
+        with tab2:
+            st.write("### Create Your Account")
+            
+            with st.form("register_form"):
+                reg_username = st.text_input("Username *", placeholder="Choose a unique username", max_chars=20)
+                reg_email = st.text_input("Email *", placeholder="your.email@example.com")
+                reg_full_name = st.text_input("Full Name *", placeholder="Enter your full name")
+                reg_phone = st.text_input("Phone Number *", placeholder="+91 XXXXX XXXXX")
+                reg_address = st.text_area("Address", placeholder="Your delivery address (optional)")
+                reg_password = st.text_input("Password *", type="password", placeholder="Create a strong password")
+                reg_confirm_password = st.text_input("Confirm Password *", type="password", placeholder="Re-enter your password")
+                agree_terms = st.checkbox("I agree to the Terms & Conditions *")
+                register_btn = st.form_submit_button("✨ Create Account", use_container_width=True, type="primary")
+            
+            if register_btn:
+                errors = []
+                if not all([reg_username, reg_email, reg_full_name, reg_phone, reg_password, reg_confirm_password]):
+                    errors.append("Please fill in all required fields")
+                if len(reg_username) < 3:
+                    errors.append("Username must be at least 3 characters")
+                if not validate_email(reg_email):
+                    errors.append("Invalid email format")
+                if not validate_phone(reg_phone):
+                    errors.append("Invalid phone number")
+                is_valid_password, password_message = validate_password(reg_password)
+                if not is_valid_password:
+                    errors.append(password_message)
+                if reg_password != reg_confirm_password:
+                    errors.append("Passwords do not match")
+                if not agree_terms:
+                    errors.append("You must agree to Terms & Conditions")
+                
+                if errors:
+                    for error in errors:
+                        st.error(f"⚠️ {error}")
+                else:
+                    success, message = register_user(reg_username, reg_email, reg_password, reg_full_name, reg_phone, reg_address)
+                    if success:
+                        st.success(f"✅ {message}")
+                        st.balloons()
+                        st.info("👉 Please switch to Login tab")
+                    else:
+                        st.error(f"❌ {message}")
+
 def home_page():
-    """Display home page with products"""
+    """Display home page"""
     st.markdown(f"<h1 class='header-title'>💄 GlamBeauty</h1>", unsafe_allow_html=True)
-    st.markdown(f"<p class='subtitle'>Premium Cosmetics & Skincare</p>", unsafe_allow_html=True)
+    st.markdown(f"<p class='subtitle'>✨ Premium Cosmetics & Skincare Collection ✨</p>", unsafe_allow_html=True)
+    
+    if st.session_state.get('logged_in') and st.session_state.get('user'):
+        st.markdown(f"""
+            <div style='background: linear-gradient(135deg, #b8e6d5 0%, #95d5b2 100%); padding: 20px; border-radius: 15px; margin-bottom: 20px; text-align: center; border: 3px solid #74c69d;'>
+                <h3 style='color: #1b4332; margin: 0;'>👋 Welcome back, {st.session_state.user['full_name']}!</h3>
+            </div>
+        """, unsafe_allow_html=True)
+        
+        col1, col2, col3 = st.columns([2, 2, 1])
+        with col3:
+            if st.session_state.user.get('is_admin'):
+                if st.button("🧑‍💼 Dashboard", use_container_width=True):
+                    st.session_state.page = 'admin_dashboard'
+                    st.rerun()
+            else:
+                if st.button("👤 Dashboard", use_container_width=True):
+                    st.session_state.page = 'customer_dashboard'
+                    st.rerun()
     
     categories = ["All"] + sorted(list(set(p['category'] for p in PRODUCTS)))
-    selected_category = st.selectbox("Filter by Category:", categories)
+    selected_category = st.selectbox("🎨 Select Category", categories)
     filtered = PRODUCTS if selected_category == "All" else [p for p in PRODUCTS if p['category'] == selected_category]
     
-    st.write(f"### 🛍️ {len(filtered)} Products Available")
+    st.markdown(f"<h2 style='color: #8b4789; text-align: center; margin: 30px 0;'>🛍️ {len(filtered)} Products Available</h2>", unsafe_allow_html=True)
     
     cols_per_row = 3
     for i in range(0, len(filtered), cols_per_row):
@@ -886,6 +867,134 @@ def home_page():
         for j in range(cols_per_row):
             if i + j < len(filtered):
                 display_product_card(filtered[i + j], cols[j])
+
+def cart_page():
+    """Display shopping cart"""
+    st.markdown(f"<h1 style='color: #8b4789; text-align: center;'>🛒 Shopping Cart</h1>", unsafe_allow_html=True)
+    
+    if not st.session_state.cart:
+        st.markdown("""
+            <div style='background: #ffffff; padding: 40px; border-radius: 20px; text-align: center; border: 3px solid #d4a8c8; margin: 40px 0;'>
+                <h2 style='color: #8b4789;'>Your cart is empty! 🛍️</h2>
+                <p style='color: #666; font-size: 18px;'>Start adding products</p>
+            </div>
+        """, unsafe_allow_html=True)
+        if st.button("🌟 Start Shopping", use_container_width=True):
+            st.session_state.page = 'home'
+            st.rerun()
+        return
+    
+    total = 0
+    for idx, item in enumerate(st.session_state.cart):
+        st.markdown('<div class="cart-item-box">', unsafe_allow_html=True)
+        
+        col1, col2, col3, col4 = st.columns([2, 3, 2, 1])
+        with col1:
+            st.image(item['image'], width=120)
+        with col2:
+            st.markdown(f"<h3 style='color: #8b4789;'>{item['name']}</h3>", unsafe_allow_html=True)
+            st.markdown(f"<p style='color: #666;'>{item['category']}</p>", unsafe_allow_html=True)
+        with col3:
+            st.markdown(f"<div class='price-tag'>₹{item['price']}</div>", unsafe_allow_html=True)
+        with col4:
+            if st.button("🗑️", key=f"remove_{idx}"):
+                remove_from_cart(idx)
+        
+        st.markdown('</div>', unsafe_allow_html=True)
+        total += item['price']
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown(f"""
+            <div style='background: #fff; padding: 25px; border-radius: 15px; text-align: center; border: 3px solid #d4a8c8;'>
+                <h4 style='color: #8b4789;'>Total Items</h4>
+                <h1 style='color: #8b4789;'>{len(st.session_state.cart)}</h1>
+            </div>
+        """, unsafe_allow_html=True)
+    
+    with col2:
+        st.markdown(f"""
+            <div style='background: #fff; padding: 25px; border-radius: 15px; text-align: center; border: 3px solid #b8e6d5;'>
+                <h4 style='color: #2d6a4f;'>Total Amount</h4>
+                <h1 style='color: #8b4789;'>₹{total}</h1>
+            </div>
+        """, unsafe_allow_html=True)
+    
+    st.divider()
+    
+    if not st.session_state.get('logged_in'):
+        st.warning("⚠️ Please login to place an order")
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("🔐 Login", use_container_width=True, type="primary"):
+                st.session_state.page = 'login'
+                st.rerun()
+        with col2:
+            if st.button("Continue as Guest", use_container_width=True):
+                st.session_state.checkout_as_guest = True
+    else:
+        st.session_state.checkout_as_guest = False
+    
+    if st.session_state.get('logged_in') or st.session_state.get('checkout_as_guest'):
+        st.write("### 📝 Customer Information")
+        
+        default_name = ""
+        default_email = ""
+        default_phone = ""
+        default_address = ""
+        
+        if st.session_state.get('logged_in') and st.session_state.get('user'):
+            user = st.session_state.user
+            default_name = user.get('full_name', '')
+            default_email = user.get('email', '')
+            default_phone = user.get('phone', '')
+            default_address = user.get('address', '')
+        
+        with st.form("checkout_form"):
+            name = st.text_input("Full Name *", value=default_name)
+            email = st.text_input("Email *", value=default_email)
+            phone = st.text_input("Phone *", value=default_phone)
+            address = st.text_area("Address *", value=default_address)
+            
+            st.divider()
+            payment_method = st.radio("💳 Payment Method", ["Cash on Delivery", "UPI", "Credit/Debit Card"], horizontal=True)
+            
+            payment_details = {}
+            
+            if payment_method == "UPI":
+                upi_id = st.text_input("UPI ID *", placeholder="yourname@paytm")
+                payment_details = {'upi_id': upi_id}
+            elif payment_method == "Credit/Debit Card":
+                card_number = st.text_input("Card Number *", placeholder="1234 5678 9012 3456")
+                col1, col2 = st.columns(2)
+                with col1:
+                    expiry = st.text_input("Expiry *", placeholder="MM/YY")
+                with col2:
+                    cvv = st.text_input("CVV *", placeholder="123", type="password")
+                payment_details = {'card_last4': card_number[-4:] if len(card_number) >= 4 else "****"}
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                continue_shop = st.form_submit_button("Continue Shopping", use_container_width=True)
+            with col2:
+                place_order = st.form_submit_button("🎉 Place Order", use_container_width=True, type="primary")
+        
+        if continue_shop:
+            st.session_state.page = 'home'
+            st.rerun()
+        
+        if place_order:
+            if not all([name, email, phone, address]):
+                st.error("⚠️ Please fill all fields")
+            else:
+                customer_info = {'name': name, 'email': email, 'phone': phone, 'address': address}
+                user_id = st.session_state.user['user_id'] if st.session_state.get('logged_in') else None
+                order_id = save_order(customer_info, st.session_state.cart, total, payment_method, payment_details, user_id)
+                st.session_state.cart = []
+                st.session_state.cart_count = {}
+                st.balloons()
+                st.success(f"✅ Order #{order_id} placed successfully!")
+                st.info(f"📧 Confirmation sent to {email}")
 
 def product_page():
     """Display product detail page"""
@@ -901,7 +1010,7 @@ def product_page():
         st.session_state.page = 'home'
         st.rerun()
     
-    st.markdown(f"<h1 style='color: {THEME['primary_color']};'>{product['name']}</h1>", unsafe_allow_html=True)
+    st.markdown(f"<h1 style='color: #8b4789;'>{product['name']}</h1>", unsafe_allow_html=True)
     
     col1, col2 = st.columns([1, 1])
     with col1:
@@ -914,428 +1023,166 @@ def product_page():
     
     with col2:
         st.write("### 📱 Product QR Code")
-        st.write("Scan to view product details or share with friends!")
-        
         base_url = get_app_url()
         product_url = f"{base_url}?product_id={product['id']}"
-        
         qr_img = generate_qr_code(product_url, product['name'])
         st.image(qr_img, width=300)
-        
-        img_buffer = io.BytesIO()
-        qr_img.save(img_buffer, format='PNG')
-        img_buffer.seek(0)
-        
-        st.download_button(
-            label="📥 Download QR Code",
-            data=img_buffer,
-            file_name=f"{product['name']}_QR.png",
-            mime="image/png",
-            use_container_width=True
-        )
-        st.write("**Product URL:**")
-        st.code(product_url, language=None)
-        st.caption("💡 Scan this QR code to open this product directly!")
 
-def cart_page():
-    """Display shopping cart"""
-    st.markdown(f"<h1 style='color: {THEME['primary_color']};'>🛒 Shopping Cart</h1>", unsafe_allow_html=True)
-    
-    if not st.session_state.cart:
-        st.info("Your cart is empty. Start shopping!")
-        if st.button("Continue Shopping"):
-            st.session_state.page = 'home'
+def customer_dashboard():
+    """Display customer dashboard"""
+    if not st.session_state.get('logged_in'):
+        st.warning("⚠️ Please login")
+        if st.button("Go to Login"):
+            st.session_state.page = 'login'
             st.rerun()
         return
     
-    total = 0
-    for idx, item in enumerate(st.session_state.cart):
-        col1, col2, col3, col4 = st.columns([2, 3, 2, 1])
-        with col1:
-            st.markdown('<div class="cart-thumbnail">', unsafe_allow_html=True)
-            st.image(item['image'], width=120)
-            st.markdown('</div>', unsafe_allow_html=True)
-        with col2:
-            st.write(f"**{item['name']}**")
-            st.write(f"{item['category']}")
-        with col3:
-            st.write(f"**₹{item['price']}**")
-        with col4:
-            if st.button("🗑️", key=f"remove_{idx}"):
-                remove_from_cart(idx)
-        total += item['price']
-        st.divider()
+    user = st.session_state.user
+    st.markdown(f"<h1 style='color: #8b4789;'>👤 Customer Dashboard</h1>", unsafe_allow_html=True)
+    st.write(f"### Welcome, {user['full_name']}! 💖")
     
-    st.write("### 📊 Cart Summary")
-    col1, col2 = st.columns(2)
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT COUNT(*), SUM(total) FROM orders WHERE user_id = ?", (user['user_id'],))
+    stats = c.fetchone()
+    total_orders = stats[0] if stats[0] else 0
+    total_spent = stats[1] if stats[1] else 0
+    conn.close()
+    
+    col1, col2, col3, col4 = st.columns(4)
     with col1:
-        st.metric("Total Items", len(st.session_state.cart))
+        st.markdown(f"<div style='background: #fff; padding: 20px; border-radius: 15px; border: 3px solid #d4a8c8; text-align: center;'><h4 style='color: #8b4789;'>Total Orders</h4><h2>{total_orders}</h2></div>", unsafe_allow_html=True)
     with col2:
-        st.metric("Total Amount", f"₹{total}")
+        st.markdown(f"<div style='background: #fff; padding: 20px; border-radius: 15px; border: 3px solid #b8e6d5; text-align: center;'><h4 style='color: #2d6a4f;'>Total Spent</h4><h2>₹{total_spent}</h2></div>", unsafe_allow_html=True)
+    with col3:
+        st.markdown(f"<div style='background: #fff; padding: 20px; border-radius: 15px; border: 3px solid #cce3ff; text-align: center;'><h4 style='color: #1e6091;'>Cart Items</h4><h2>{len(st.session_state.cart)}</h2></div>", unsafe_allow_html=True)
+    with col4:
+        st.markdown(f"<div style='background: #fff; padding: 20px; border-radius: 15px; border: 3px solid #f0e6f6; text-align: center;'><h4 style='color: #8b4789;'>Member</h4><p>{user['username']}</p></div>", unsafe_allow_html=True)
     
     st.divider()
-    
-    cart_json = export_cart_json()
-    st.download_button(
-        label="💾 Save Cart as JSON",
-        data=cart_json,
-        file_name="glambeauty_cart.json",
-        mime="application/json",
-        use_container_width=True
-    )
-    
-    st.divider()
-    st.write("### 📝 Customer Information")
-    
-    with st.form("checkout_form"):
-        name = st.text_input("Full Name *", placeholder="Enter your name")
-        email = st.text_input("Email *", placeholder="your.email@example.com")
-        phone = st.text_input("Phone Number *", placeholder="+91 XXXXX XXXXX")
-        address = st.text_area("Delivery Address *", placeholder="Full address with pincode")
-        
-        st.divider()
-        st.write("### 💳 Payment Method")
-        payment_method = st.radio(
-            "Select Payment Method *",
-            ["Cash on Delivery", "UPI", "Credit/Debit Card"],
-            horizontal=True
-        )
-        
-        payment_details = {}
-        
-        if payment_method == "UPI":
-            st.write("#### 📱 UPI Payment Details")
-            col1, col2 = st.columns(2)
-            with col1:
-                upi_id = st.text_input("UPI ID *", placeholder="yourname@paytm", key="upi_id")
-            with col2:
-                upi_provider = st.selectbox("UPI Provider", ["Google Pay", "PhonePe", "Paytm", "BHIM", "Other"])
-            
-            st.info("💡 You will receive a payment request on your UPI app after placing the order.")
-            payment_details = {'upi_id': upi_id, 'upi_provider': upi_provider}
-        
-        elif payment_method == "Credit/Debit Card":
-            st.write("#### 💳 Card Payment Details")
-            card_number = st.text_input("Card Number *", placeholder="1234 5678 9012 3456", max_chars=19, key="card_num")
-            
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                card_holder = st.text_input("Cardholder Name *", placeholder="Name on card", key="card_holder")
-            with col2:
-                expiry_date = st.text_input("Expiry Date *", placeholder="MM/YY", max_chars=5, key="expiry")
-            with col3:
-                cvv = st.text_input("CVV *", placeholder="123", max_chars=3, type="password", key="cvv")
-            
-            card_type = st.radio("Card Type", ["Credit Card", "Debit Card"], horizontal=True)
-            
-            st.warning("🔒 Your card details are encrypted and secure. We use industry-standard SSL encryption.")
-            payment_details = {
-                'card_number': card_number[-4:] if len(card_number) >= 4 else "****",
-                'card_holder': card_holder,
-                'expiry_date': expiry_date,
-                'card_type': card_type
-            }
-        
-        else:
-            st.write("#### 💵 Cash on Delivery")
-            st.info("💡 Pay in cash when your order is delivered to your doorstep.")
-            st.success("✅ No advance payment required!")
-            payment_details = {'method': 'Cash on Delivery'}
-        
-        st.divider()
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            continue_shop = st.form_submit_button("Continue Shopping", use_container_width=True)
-        with col2:
-            place_order = st.form_submit_button("🎉 Place Order", use_container_width=True, type="primary")
-    
-    if continue_shop:
-        st.session_state.page = 'home'
-        st.rerun()
-    
-    if place_order:
-        if not (name and email and phone and address):
-            st.error("⚠️ Please fill in all customer information fields")
-            return
-        
-        payment_valid = True
-        if payment_method == "UPI":
-            if not upi_id:
-                st.error("⚠️ Please enter your UPI ID")
-                payment_valid = False
-            elif '@' not in upi_id:
-                st.error("⚠️ Invalid UPI ID format")
-                payment_valid = False
-        
-        elif payment_method == "Credit/Debit Card":
-            if not (card_number and card_holder and expiry_date and cvv):
-                st.error("⚠️ Please fill in all card details")
-                payment_valid = False
-            elif len(card_number.replace(" ", "")) < 13:
-                st.error("⚠️ Invalid card number")
-                payment_valid = False
-            elif len(cvv) != 3:
-                st.error("⚠️ CVV must be 3 digits")
-                payment_valid = False
-        
-        if payment_valid:
-            customer_info = {'name': name, 'email': email, 'phone': phone, 'address': address}
-            st.session_state.customer_info = customer_info
-            order_id = save_order(customer_info, st.session_state.cart, total, payment_method, payment_details)
-            
-            st.session_state.cart = []
-            st.session_state.cart_count = {}
-            
-            st.balloons()
-            st.success(f"✅ Order #{order_id} placed successfully! Thank you for shopping with GlamBeauty! 💄")
-            
-            if payment_method == "UPI":
-                st.info(f"📱 UPI payment request sent to {upi_id}")
-            elif payment_method == "Credit/Debit Card":
-                st.info(f"💳 Payment processed on card ending with {payment_details['card_number']}")
-            else:
-                st.info(f"💵 You will pay ₹{total} in cash upon delivery")
-            
-            st.info(f"📧 Order confirmation sent to {email}")
-
-def orders_page():
-    """Display order history"""
-    st.markdown(f"<h1 style='color: {THEME['primary_color']};'>📦 Order History</h1>", unsafe_allow_html=True)
-    
-    rows = fetch_orders_from_db()
-    if not rows:
-        st.info("No orders yet. Start shopping to place your first order!")
-        if st.button("Start Shopping"):
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        if st.button("🛍️ Shop Now", use_container_width=True):
             st.session_state.page = 'home'
             st.rerun()
-        return
-    
-    csv_data = export_orders_csv()
-    st.download_button(
-        label="📥 Export Orders (CSV)",
-        data=csv_data,
-        file_name=f"glambeauty_orders_{datetime.now().strftime('%Y%m%d')}.csv",
-        mime="text/csv"
-    )
-    
-    st.write(f"### Total Orders: {len(rows)}")
-    st.divider()
-    
-    for row in rows:
-        if len(row) >= 11:
-            order_id, date, name, email, phone, address, items_json, total, payment_method, payment_details_json, status = row[:11]
-            payment_details = safe_json_loads(payment_details_json)
-        else:
-            order_id, date, name, email, phone, address, items_json, total, status = row[:9]
-            payment_method = "Cash on Delivery"
-            payment_details = {}
-        
-        items = safe_json_loads(items_json)
-        
-        with st.expander(f"🛍️ Order #{order_id} - {date} - ₹{total}"):
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.write("#### 👤 Customer Details")
-                st.write(f"**Name:** {name}")
-                st.write(f"**Email:** {email}")
-                st.write(f"**Phone:** {phone}")
-                st.write(f"**Address:** {address}")
-            
-            with col2:
-                st.write("#### 💳 Payment Details")
-                st.write(f"**Status:** {status}")
-                st.write(f"**Payment Method:** {payment_method}")
-                
-                if payment_method == "UPI" and payment_details:
-                    st.write(f"**UPI ID:** {payment_details.get('upi_id', 'N/A')}")
-                    st.write(f"**UPI Provider:** {payment_details.get('upi_provider', 'N/A')}")
-                elif payment_method == "Credit/Debit Card" and payment_details:
-                    st.write(f"**Card Type:** {payment_details.get('card_type', 'N/A')}")
-                    st.write(f"**Card Holder:** {payment_details.get('card_holder', 'N/A')}")
-                    st.write(f"**Card Number:** **** **** **** {payment_details.get('card_number', '****')}")
-                elif payment_method == "Cash on Delivery":
-                    st.write("**Payment:** Pay on delivery")
-            
-            st.divider()
-            st.write("#### 🛍️ Order Items:")
-            for item in items:
-                c1, c2, c3 = st.columns([2, 4, 2])
-                with c1:
-                    st.image(item['image'], width=80)
-                with c2:
-                    st.write(f"**{item['name']}**")
-                    st.write(f"{item['category']}")
-                with c3:
-                    st.write(f"₹{item['price']}")
-
-def about_page():
-    """Display about page"""
-    st.markdown(f"<h1 style='color: {THEME['primary_color']};'>About GlamBeauty</h1>", unsafe_allow_html=True)
-    st.write("""
-    ### Welcome to GlamBeauty! 💄✨
-
-    We are your one-stop destination for premium cosmetics and skincare products.
-    Our mission is to help everyone feel confident and beautiful in their own skin.
-
-    #### Why Choose Us?
-    - 🌟 **Premium Quality**: All products are carefully curated for quality
-    - 💯 **Authentic**: 100% genuine and original products
-    - 🚚 **Fast Delivery**: Quick and reliable shipping across India
-    - 💰 **Best Prices**: Competitive pricing with regular offers
-    - 🎁 **Gift Ready**: Beautiful packaging perfect for gifting
-
-    #### Our Categories
-    - **Lips**: Lipsticks, Glosses, Lip Liners
-    - **Eyes**: Mascara, Eyeliner, Eyeshadow, Brow Products
-    - **Face**: Foundation, Blush, Highlighter, Setting Spray
-    - **Skincare**: Cleansers, Serums, Moisturizers, Treatments
-
-    Thank you for choosing GlamBeauty! 💖
-    """)
-
-def contact_page():
-    """Display contact page"""
-    st.markdown(f"<h1 style='color: {THEME['primary_color']};'>Contact Us</h1>", unsafe_allow_html=True)
-    st.write("""
-    ### Get in Touch! 📧
-
-    We'd love to hear from you! Whether you have a question about our products,
-    need help with your order, or just want to say hi, we're here for you.
-    """)
-    col1, col2 = st.columns(2)
-    with col1:
-        st.write("#### 📍 Visit Us")
-        st.write("""
-        GlamBeauty Store
-        123 Beauty Street
-        Fashion District
-        Mumbai, Maharashtra 400001
-        India
-        """)
-        st.write("#### 📞 Call Us")
-        st.write("Phone: +91 98765 43210")
-        st.write("WhatsApp: +91 98765 43210")
-        st.write("#### 📧 Email Us")
-        st.write("support@glambeauty.com")
-        st.write("orders@glambeauty.com")
     with col2:
-        st.write("#### 💬 Send us a Message")
-        with st.form("contact_form"):
-            name = st.text_input("Your Name")
-            email = st.text_input("Your Email")
-            message = st.text_area("Your Message", height=150)
-            if st.form_submit_button("Send Message", use_container_width=True):
-                if name and email and message:
-                    st.success("✅ Thank you! Your message has been sent. We'll get back to you soon!")
-                else:
-                    st.error("Please fill in all fields")
+        if st.button("🛒 View Cart", use_container_width=True):
+            st.session_state.page = 'cart'
+            st.rerun()
+    with col3:
+        if st.button("📦 My Orders", use_container_width=True):
+            st.session_state.page = 'profile'
+            st.rerun()
+    
+    st.divider()
+    st.write("### 📦 Recent Orders")
+    display_user_orders(user['user_id'], limit=5)
 
-def admin_page():
+def admin_dashboard():
     """Display admin dashboard"""
-    st.markdown(f"<h1 style='color: {THEME['primary_color']};'>🧑‍💼 Admin Dashboard</h1>", unsafe_allow_html=True)
+    if not st.session_state.get('logged_in') or not st.session_state.user.get('is_admin'):
+        st.error("🚫 Access Denied")
+        if st.button("← Back"):
+            st.session_state.page = 'home'
+            st.rerun()
+        return
     
-    tab1, tab2 = st.tabs(["Add Product", "Manage Products"])
+    st.markdown("<h1 style='color: #8b4789;'>🧑‍💼 Admin Dashboard</h1>", unsafe_allow_html=True)
+    st.success(f"Welcome, Admin {st.session_state.user['full_name']}!")
+
+def profile_page():
+    """Display user profile"""
+    if not st.session_state.get('logged_in'):
+        st.warning("⚠️ Please login")
+        if st.button("Go to Login"):
+            st.session_state.page = 'login'
+            st.rerun()
+        return
+    
+    user = st.session_state.user
+    st.markdown("<h1 style='color: #8b4789;'>👤 My Profile</h1>", unsafe_allow_html=True)
+    
+    tab1, tab2, tab3 = st.tabs(["📝 Profile", "🔐 Password", "📦 Orders"])
     
     with tab1:
-        st.subheader("Add New Product")
-        with st.form("add_product"):
-            name = st.text_input("Product Name *")
-            price = st.number_input("Price (₹) *", min_value=0, step=1)
-            category = st.selectbox("Category *", ["Lips", "Eyes", "Face", "Skincare"])
-            description = st.text_area("Description *")
-            image = st.text_input("Image URL *", placeholder="https://...")
-            
-            if st.form_submit_button("Add Product", use_container_width=True):
-                if name and image and description:
-                    new_id = max([p["id"] for p in PRODUCTS]) + 1 if PRODUCTS else 1
-                    new_product = {
-                        "id": new_id,
-                        "name": name,
-                        "price": int(price),
-                        "category": category,
-                        "description": description,
-                        "image": image
-                    }
-                    PRODUCTS.append(new_product)
-                    save_products(PRODUCTS)
-                    st.success("✅ Product added successfully!")
+        with st.form("profile_form"):
+            full_name = st.text_input("Full Name", value=user.get('full_name', ''))
+            phone = st.text_input("Phone", value=user.get('phone', ''))
+            address = st.text_area("Address", value=user.get('address', ''))
+            if st.form_submit_button("💾 Save", type="primary"):
+                success, msg = update_user_profile(user['user_id'], full_name, phone, address)
+                if success:
+                    st.session_state.user['full_name'] = full_name
+                    st.session_state.user['phone'] = phone
+                    st.session_state.user['address'] = address
+                    st.success(msg)
                     st.rerun()
                 else:
-                    st.error("Please fill in all required fields.")
+                    st.error(msg)
     
     with tab2:
-        st.subheader("Current Products")
-        for p in PRODUCTS:
-            col1, col2, col3 = st.columns([3, 1, 1])
-            with col1:
-                st.write(f"**{p['name']}** - ₹{p['price']} - {p['category']}")
-            with col2:
-                st.write(f"ID: {p['id']}")
-            with col3:
-                if st.button("🗑️ Delete", key=f"del_{p['id']}"):
-                    PRODUCTS.remove(p)
-                    save_products(PRODUCTS)
-                    st.success(f"Deleted {p['name']}")
-                    st.rerun()
-
-# --- SIDEBAR NAVIGATION ---
-with st.sidebar:
-    st.image("https://img.icons8.com/color/96/000000/cosmetics.png", width=100)
-    st.title("GlamBeauty")
-    st.write("---")
+        with st.form("password_form"):
+            old_pwd = st.text_input("Current Password", type="password")
+            new_pwd = st.text_input("New Password", type="password")
+            confirm_pwd = st.text_input("Confirm Password", type="password")
+            if st.form_submit_button("🔒 Change Password", type="primary"):
+                if new_pwd != confirm_pwd:
+                    st.error("Passwords don't match")
+                else:
+                    success, msg = change_password(user['user_id'], old_pwd, new_pwd)
+                    if success:
+                        st.success(msg)
+                    else:
+                        st.error(msg)
     
-    if st.button("🏠 Home", use_container_width=True):
+    with tab3:
+        display_user_orders(user['user_id'])
+
+# --- NAVIGATION ---
+with st.sidebar:
+    st.markdown("<h2 style='color: #8b4789;'>💄 GlamBeauty</h2>", unsafe_allow_html=True)
+    
+    cart_count = len(st.session_state.cart)
+    
+    if st.button(f"🏠 Home", use_container_width=True):
         st.session_state.page = 'home'
         st.rerun()
     
-    if st.button(f"🛒 Cart ({len(st.session_state.cart)})", use_container_width=True):
+    if st.button(f"🛒 Cart ({cart_count})", use_container_width=True):
         st.session_state.page = 'cart'
         st.rerun()
     
-    if st.button("📦 Orders", use_container_width=True):
-        st.session_state.page = 'orders'
-        st.rerun()
-    
-    if st.button("ℹ️ About", use_container_width=True):
-        st.session_state.page = 'about'
-        st.rerun()
-    
-    if st.button("📞 Contact", use_container_width=True):
-        st.session_state.page = 'contact'
-        st.rerun()
-    
-    if st.button("🧑‍💼 Admin", use_container_width=True):
-        st.session_state.page = 'admin'
-        st.rerun()
-    
-    st.write("---")
-    st.write("### 🎉 Special Offers")
-    st.info("💝 Free shipping on orders above ₹1000!")
-    st.success("🎁 Buy 3, Get 1 Free on select items")
+    if st.session_state.get('logged_in'):
+        if st.button("👤 Profile", use_container_width=True):
+            st.session_state.page = 'profile'
+            st.rerun()
+        
+        if st.button("🚪 Logout", use_container_width=True):
+            st.session_state.logged_in = False
+            st.session_state.user = None
+            st.session_state.page = 'login'
+            st.rerun()
+    else:
+        if st.button("🔐 Login", use_container_width=True):
+            st.session_state.page = 'login'
+            st.rerun()
 
-# --- MAIN PAGE ROUTING ---
-if st.session_state.page == 'home':
+# --- MAIN ROUTING ---
+page = st.session_state.page
+
+if page == 'login':
+    login_page()
+elif page == 'home':
     home_page()
-elif st.session_state.page == 'product':
-    product_page()
-elif st.session_state.page == 'cart':
+elif page == 'cart':
     cart_page()
-elif st.session_state.page == 'orders':
-    orders_page()
-elif st.session_state.page == 'about':
-    about_page()
-elif st.session_state.page == 'contact':
-    contact_page()
-elif st.session_state.page == 'admin':
-    admin_page()
-
-# --- FOOTER ---
-st.write("---")
-st.markdown(f"""
-    <div style='text-align: center; color: #666; padding: 20px;'>
-        <p>© {datetime.now().year} GlamBeauty - Premium Cosmetics & Skincare</p>
-        <p>Made with ❤️ in India | 🔒 Secure Shopping | 📦 Fast Delivery</p>
-    </div>
-""", unsafe_allow_html=True)
+elif page == 'product':
+    product_page()
+elif page == 'customer_dashboard':
+    customer_dashboard()
+elif page == 'admin_dashboard':
+    admin_dashboard()
+elif page == 'profile':
+    profile_page()
+else:
+    login_page()
