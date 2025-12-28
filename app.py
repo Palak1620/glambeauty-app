@@ -12,9 +12,6 @@ import sqlite3
 import hashlib
 import re
 
-params = st.query_params
-product_id = params.get("product_id")
-
 def safe_json_loads(s):
     """Safely parse a JSON string. Returns {} if invalid or empty."""
     try:
@@ -364,22 +361,26 @@ def load_theme():
 def get_app_url():
     """Get the current Streamlit app URL"""
     import os
-    app_url = "https://bqkpyoeg3absaumqgdz96m.streamlit.app"
+    app_url = os.getenv('STREAMLIT_APP_URL')
     if app_url:
         return app_url
+    if 'app_url' in st.session_state and st.session_state.app_url:
+        return st.session_state.app_url
+    return "http://localhost:8501"
 
-def generate_qr_code(product_url, product_name=""):
+def generate_qr_code(data, product_name):
+    """Generate QR code without center overlay"""
     qr = qrcode.QRCode(
         version=1,
         error_correction=qrcode.constants.ERROR_CORRECT_H,
         box_size=10,
         border=4,
     )
-    qr.add_data(product_url)
+    qr.add_data(data)
     qr.make(fit=True)
-    img = qr.make_image(fill_color="#8b4789", back_color="white").convert("RGB")
+    img = qr.make_image(fill_color="#8b4789", back_color="white")
+    img = img.convert('RGB')
     return img
-
 
 def add_to_cart(product):
     """Add product to cart"""
@@ -832,24 +833,17 @@ def login_page():
                         st.error(f"❌ {message}")
 
 def home_page():
-    """Display home page with welcome, dashboard buttons, QR code upload, and products"""
-    import re
-    from PIL import Image
-    from pyzbar.pyzbar import decode
-
+    """Display home page"""
     st.markdown(f"<h1 class='header-title'>💄 GlamBeauty</h1>", unsafe_allow_html=True)
     st.markdown(f"<p class='subtitle'>✨ Premium Cosmetics & Skincare Collection ✨</p>", unsafe_allow_html=True)
-
-    # Welcome message and dashboard button
+    
     if st.session_state.get('logged_in') and st.session_state.get('user'):
         st.markdown(f"""
-            <div style='background: linear-gradient(135deg, #b8e6d5 0%, #95d5b2 100%); 
-                        padding: 20px; border-radius: 15px; margin-bottom: 20px; text-align: center; 
-                        border: 3px solid #74c69d;' >
+            <div style='background: linear-gradient(135deg, #b8e6d5 0%, #95d5b2 100%); padding: 20px; border-radius: 15px; margin-bottom: 20px; text-align: center; border: 3px solid #74c69d;'>
                 <h3 style='color: #1b4332; margin: 0;'>👋 Welcome back, {st.session_state.user['full_name']}!</h3>
             </div>
         """, unsafe_allow_html=True)
-
+        
         col1, col2, col3 = st.columns([2, 2, 1])
         with col3:
             if st.session_state.user.get('is_admin'):
@@ -860,48 +854,60 @@ def home_page():
                 if st.button("👤 Dashboard", use_container_width=True):
                     st.session_state.page = 'customer_dashboard'
                     st.rerun()
-
-    # --- QR Code Scan Section ---
-    st.divider()
-    st.markdown("<h2 style='color: #8b4789;'>📱 Scan a Product QR Code</h2>", unsafe_allow_html=True)
-    st.write("Upload a QR code image to go directly to the product page.")
-    uploaded_file = st.file_uploader("Upload QR code image", type=["png", "jpg", "jpeg"], key="qr_upload")
-
-    if uploaded_file:
+    
+    # QR Code Scanner (Optional Feature) - Completely wrapped in try-except
+    qr_scanner_available = False
+    try:
+        import pyzbar
+        qr_scanner_available = True
+    except:
+        qr_scanner_available = False
+    
+    if qr_scanner_available:
         try:
-            img = Image.open(uploaded_file)
-            qr_data = decode(img)
-            if qr_data:
-                result = qr_data[0].data.decode("utf-8")
-                st.success(f"QR Code points to: {result}")
-
-                # Redirect to product page if URL contains product_id
-                product_id_match = re.search(r'product_id=(\d+)', result)
-                if product_id_match:
-                    product_id = int(product_id_match.group(1))
-                    if any(p['id'] == product_id for p in PRODUCTS):
-                        st.session_state.selected_product = product_id
-                        st.session_state.page = 'product'
-                        st.rerun()
-            else:
-                st.error("No QR code detected in the uploaded image.")
-        except Exception as e:
-            st.error(f"Error reading QR code: {e}")
-
-    # --- Product Display Section ---
+            from pyzbar.pyzbar import decode
+            from PIL import Image
+            import re
+            
+            st.divider()
+            with st.expander("📱 Scan Product QR Code", expanded=False):
+                st.write("Upload a QR code image to go directly to the product page.")
+                uploaded_file = st.file_uploader("Upload QR code image", type=["png", "jpg", "jpeg"], key="qr_upload")
+                
+                if uploaded_file:
+                    try:
+                        img = Image.open(uploaded_file)
+                        qr_data = decode(img)
+                        if qr_data:
+                            result = qr_data[0].data.decode("utf-8")
+                            st.success(f"QR Code detected!")
+                            
+                            product_id_match = re.search(r'product_id=(\d+)', result)
+                            if product_id_match:
+                                product_id = int(product_id_match.group(1))
+                                if any(p['id'] == product_id for p in PRODUCTS):
+                                    st.session_state.selected_product = product_id
+                                    st.session_state.page = 'product'
+                                    st.rerun()
+                        else:
+                            st.error("No QR code detected in the uploaded image.")
+                    except Exception as e:
+                        st.error(f"Error reading QR code: {e}")
+        except:
+            pass  # Silently fail if QR scanner has issues
+    
     categories = ["All"] + sorted(list(set(p['category'] for p in PRODUCTS)))
     selected_category = st.selectbox("🎨 Select Category", categories)
     filtered = PRODUCTS if selected_category == "All" else [p for p in PRODUCTS if p['category'] == selected_category]
-
+    
     st.markdown(f"<h2 style='color: #8b4789; text-align: center; margin: 30px 0;'>🛍️ {len(filtered)} Products Available</h2>", unsafe_allow_html=True)
-
+    
     cols_per_row = 3
     for i in range(0, len(filtered), cols_per_row):
         cols = st.columns(cols_per_row)
         for j in range(cols_per_row):
             if i + j < len(filtered):
                 display_product_card(filtered[i + j], cols[j])
-
 
 def cart_page():
     """Display shopping cart"""
@@ -1114,9 +1120,9 @@ def customer_dashboard():
     display_user_orders(user['user_id'], limit=5)
 
 def admin_dashboard():
-    """Display admin dashboard"""
+    """Display admin dashboard with product management"""
     if not st.session_state.get('logged_in') or not st.session_state.user.get('is_admin'):
-        st.error("🚫 Access Denied")
+        st.error("🚫 Access Denied - Admin privileges required")
         if st.button("← Back"):
             st.session_state.page = 'home'
             st.rerun()
@@ -1124,6 +1130,226 @@ def admin_dashboard():
     
     st.markdown("<h1 style='color: #8b4789;'>🧑‍💼 Admin Dashboard</h1>", unsafe_allow_html=True)
     st.success(f"Welcome, Admin {st.session_state.user['full_name']}!")
+    
+    # Statistics
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT COUNT(*) FROM orders")
+    total_orders = c.fetchone()[0]
+    c.execute("SELECT SUM(total) FROM orders")
+    total_revenue = c.fetchone()[0] or 0
+    c.execute("SELECT COUNT(*) FROM users WHERE is_admin = 0")
+    total_customers = c.fetchone()[0]
+    conn.close()
+    
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.markdown(f"<div style='background: #fff; padding: 20px; border-radius: 15px; border: 3px solid #d4a8c8; text-align: center;'><h4 style='color: #8b4789;'>Total Products</h4><h2>{len(PRODUCTS)}</h2></div>", unsafe_allow_html=True)
+    with col2:
+        st.markdown(f"<div style='background: #fff; padding: 20px; border-radius: 15px; border: 3px solid #b8e6d5; text-align: center;'><h4 style='color: #2d6a4f;'>Total Revenue</h4><h2>₹{total_revenue}</h2></div>", unsafe_allow_html=True)
+    with col3:
+        st.markdown(f"<div style='background: #fff; padding: 20px; border-radius: 15px; border: 3px solid #cce3ff; text-align: center;'><h4 style='color: #1e6091;'>Total Orders</h4><h2>{total_orders}</h2></div>", unsafe_allow_html=True)
+    with col4:
+        st.markdown(f"<div style='background: #fff; padding: 20px; border-radius: 15px; border: 3px solid #ffd6e8; text-align: center;'><h4 style='color: #c9184a;'>Customers</h4><h2>{total_customers}</h2></div>", unsafe_allow_html=True)
+    
+    st.divider()
+    
+    # Tabs for different admin functions
+    tab1, tab2, tab3, tab4 = st.tabs(["📦 Manage Products", "➕ Add Product", "📊 View Orders", "👥 Manage Users"])
+    
+    with tab1:
+        st.write("### 📦 Product Management")
+        
+        if len(PRODUCTS) == 0:
+            st.info("No products available. Add your first product!")
+        else:
+            for product in PRODUCTS:
+                with st.expander(f"🛍️ {product['name']} - ₹{product['price']}"):
+                    col1, col2 = st.columns([1, 2])
+                    
+                    with col1:
+                        st.image(product['image'], width=200)
+                    
+                    with col2:
+                        with st.form(f"edit_product_{product['id']}"):
+                            st.write("#### Edit Product Details")
+                            new_name = st.text_input("Product Name", value=product['name'], key=f"name_{product['id']}")
+                            new_price = st.number_input("Price (₹)", value=product['price'], min_value=1, key=f"price_{product['id']}")
+                            new_category = st.selectbox("Category", ["Lips", "Face", "Eyes", "Skincare", "Nails", "Fragrance", "Tools"], 
+                                                       index=["Lips", "Face", "Eyes", "Skincare", "Nails", "Fragrance", "Tools"].index(product['category']) if product['category'] in ["Lips", "Face", "Eyes", "Skincare", "Nails", "Fragrance", "Tools"] else 0,
+                                                       key=f"cat_{product['id']}")
+                            new_description = st.text_area("Description", value=product['description'], key=f"desc_{product['id']}")
+                            new_image = st.text_input("Image URL", value=product['image'], key=f"img_{product['id']}")
+                            
+                            col_a, col_b = st.columns(2)
+                            with col_a:
+                                update_btn = st.form_submit_button("💾 Update Product", use_container_width=True, type="primary")
+                            with col_b:
+                                delete_btn = st.form_submit_button("🗑️ Delete Product", use_container_width=True)
+                            
+                            if update_btn:
+                                # Update product
+                                for p in PRODUCTS:
+                                    if p['id'] == product['id']:
+                                        p['name'] = new_name
+                                        p['price'] = new_price
+                                        p['category'] = new_category
+                                        p['description'] = new_description
+                                        p['image'] = new_image
+                                        break
+                                save_products(PRODUCTS)
+                                st.success(f"✅ Product '{new_name}' updated successfully!")
+                                st.rerun()
+                            
+                            if delete_btn:
+                                # Delete product
+                                updated_products = [p for p in PRODUCTS if p['id'] != product['id']]
+                                save_products(updated_products)
+                                st.success(f"✅ Product '{product['name']}' deleted successfully!")
+                                st.rerun()
+    
+    with tab2:
+        st.write("### ➕ Add New Product")
+        
+        with st.form("add_product_form"):
+            st.write("#### Enter Product Details")
+            
+            new_name = st.text_input("Product Name *", placeholder="e.g., Ruby Red Lipstick")
+            new_price = st.number_input("Price (₹) *", min_value=1, value=499)
+            new_category = st.selectbox("Category *", ["Lips", "Face", "Eyes", "Skincare", "Nails", "Fragrance", "Tools"])
+            new_description = st.text_area("Description *", placeholder="Enter product description...")
+            new_image = st.text_input("Image URL *", placeholder="https://example.com/image.jpg")
+            
+            st.info("💡 Tip: Use high-quality product images from Pexels, Unsplash, or your own hosting.")
+            
+            add_btn = st.form_submit_button("✨ Add Product", use_container_width=True, type="primary")
+            
+            if add_btn:
+                if not all([new_name, new_price, new_category, new_description, new_image]):
+                    st.error("⚠️ Please fill all required fields")
+                else:
+                    # Generate new product ID
+                    new_id = max([p['id'] for p in PRODUCTS]) + 1 if PRODUCTS else 1
+                    
+                    new_product = {
+                        "id": new_id,
+                        "name": new_name,
+                        "price": new_price,
+                        "category": new_category,
+                        "description": new_description,
+                        "image": new_image
+                    }
+                    
+                    PRODUCTS.append(new_product)
+                    save_products(PRODUCTS)
+                    st.success(f"✅ Product '{new_name}' added successfully!")
+                    st.balloons()
+                    st.rerun()
+    
+    with tab3:
+        st.write("### 📊 All Orders")
+        
+        rows = fetch_orders_from_db()
+        
+        if not rows:
+            st.info("No orders yet!")
+        else:
+            st.write(f"**Total Orders:** {len(rows)}")
+            
+            # Export button
+            csv_data = export_orders_csv()
+            st.download_button(
+                label="📥 Export Orders to CSV",
+                data=csv_data,
+                file_name=f"orders_{datetime.now().strftime('%Y%m%d')}.csv",
+                mime="text/csv"
+            )
+            
+            st.divider()
+            
+            for row in rows:
+                if len(row) >= 11:
+                    order_id, date, name, email, phone, address, items_json, total, payment_method, payment_details_json, status = row[:11]
+                else:
+                    order_id, date, name, email, phone, address, items_json, total, status = row[:9]
+                    payment_method = "Cash on Delivery"
+                
+                items = safe_json_loads(items_json)
+                
+                with st.expander(f"🛍️ Order #{order_id} - {name} - ₹{total} - {status}"):
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        st.write("#### 📅 Order Details")
+                        st.write(f"**Order ID:** {order_id}")
+                        st.write(f"**Date:** {date}")
+                        st.write(f"**Status:** {status}")
+                        st.write(f"**Payment:** {payment_method}")
+                    
+                    with col2:
+                        st.write("#### 👤 Customer Details")
+                        st.write(f"**Name:** {name}")
+                        st.write(f"**Email:** {email}")
+                        st.write(f"**Phone:** {phone}")
+                        st.write(f"**Address:** {address}")
+                    
+                    st.divider()
+                    st.write("#### 🛍️ Order Items:")
+                    
+                    for item in items:
+                        c1, c2, c3 = st.columns([2, 4, 2])
+                        with c1:
+                            st.image(item['image'], width=80)
+                        with c2:
+                            st.write(f"**{item['name']}**")
+                            st.write(f"{item['category']}")
+                        with c3:
+                            st.write(f"**₹{item['price']}**")
+                    
+                    st.divider()
+                    st.write(f"### Total: ₹{total}")
+    
+    with tab4:
+        st.write("### 👥 User Management")
+        
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute("SELECT user_id, username, email, full_name, phone, created_at, is_admin FROM users ORDER BY created_at DESC")
+        users = c.fetchall()
+        conn.close()
+        
+        if not users:
+            st.info("No users registered yet!")
+        else:
+            st.write(f"**Total Users:** {len(users)}")
+            
+            for user in users:
+                user_id, username, email, full_name, phone, created_at, is_admin = user
+                
+                role = "🧑‍💼 Admin" if is_admin else "👤 Customer"
+                
+                with st.expander(f"{role} {username} - {full_name}"):
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        st.write(f"**User ID:** {user_id}")
+                        st.write(f"**Username:** {username}")
+                        st.write(f"**Email:** {email}")
+                    
+                    with col2:
+                        st.write(f"**Full Name:** {full_name}")
+                        st.write(f"**Phone:** {phone}")
+                        st.write(f"**Joined:** {created_at}")
+                    
+                    if not is_admin:
+                        if st.button(f"🧑‍💼 Make Admin", key=f"admin_{user_id}"):
+                            conn = sqlite3.connect(DB_PATH)
+                            c = conn.cursor()
+                            c.execute("UPDATE users SET is_admin = 1 WHERE user_id = ?", (user_id,))
+                            conn.commit()
+                            conn.close()
+                            st.success(f"✅ {username} is now an admin!")
+                            st.rerun()
 
 def profile_page():
     """Display user profile"""
