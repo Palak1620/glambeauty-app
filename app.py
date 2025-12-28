@@ -366,7 +366,7 @@ def get_app_url():
         return app_url
     if 'app_url' in st.session_state and st.session_state.app_url:
         return st.session_state.app_url
-    return "http://localhost:8501"
+    return "https://app.py.streamlit.app"
 
 def generate_qr_code(data, product_name):
     """Generate QR code without center overlay"""
