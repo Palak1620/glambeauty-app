@@ -12,6 +12,9 @@ import sqlite3
 import hashlib
 import re
 
+params = st.query_params
+product_id = params.get("product_id")
+
 def safe_json_loads(s):
     """Safely parse a JSON string. Returns {} if invalid or empty."""
     try:
@@ -361,26 +364,22 @@ def load_theme():
 def get_app_url():
     """Get the current Streamlit app URL"""
     import os
-    app_url = os.getenv('STREAMLIT_APP_URL')
+    app_url = "https://bqkpyoeg3absaumqgdz96m.streamlit.app"
     if app_url:
         return app_url
-    if 'app_url' in st.session_state and st.session_state.app_url:
-        return st.session_state.app_url
-    return "http://localhost:8501"
 
-def generate_qr_code(data, product_name):
-    """Generate QR code without center overlay"""
+def generate_qr_code(product_url, product_name=""):
     qr = qrcode.QRCode(
         version=1,
         error_correction=qrcode.constants.ERROR_CORRECT_H,
         box_size=10,
         border=4,
     )
-    qr.add_data(data)
+    qr.add_data(product_url)
     qr.make(fit=True)
-    img = qr.make_image(fill_color="#8b4789", back_color="white")
-    img = img.convert('RGB')
+    img = qr.make_image(fill_color="#8b4789", back_color="white").convert("RGB")
     return img
+
 
 def add_to_cart(product):
     """Add product to cart"""
@@ -833,17 +832,24 @@ def login_page():
                         st.error(f"❌ {message}")
 
 def home_page():
-    """Display home page"""
+    """Display home page with welcome, dashboard buttons, QR code upload, and products"""
+    import re
+    from PIL import Image
+    from pyzbar.pyzbar import decode
+
     st.markdown(f"<h1 class='header-title'>💄 GlamBeauty</h1>", unsafe_allow_html=True)
     st.markdown(f"<p class='subtitle'>✨ Premium Cosmetics & Skincare Collection ✨</p>", unsafe_allow_html=True)
-    
+
+    # Welcome message and dashboard button
     if st.session_state.get('logged_in') and st.session_state.get('user'):
         st.markdown(f"""
-            <div style='background: linear-gradient(135deg, #b8e6d5 0%, #95d5b2 100%); padding: 20px; border-radius: 15px; margin-bottom: 20px; text-align: center; border: 3px solid #74c69d;'>
+            <div style='background: linear-gradient(135deg, #b8e6d5 0%, #95d5b2 100%); 
+                        padding: 20px; border-radius: 15px; margin-bottom: 20px; text-align: center; 
+                        border: 3px solid #74c69d;' >
                 <h3 style='color: #1b4332; margin: 0;'>👋 Welcome back, {st.session_state.user['full_name']}!</h3>
             </div>
         """, unsafe_allow_html=True)
-        
+
         col1, col2, col3 = st.columns([2, 2, 1])
         with col3:
             if st.session_state.user.get('is_admin'):
@@ -854,19 +860,48 @@ def home_page():
                 if st.button("👤 Dashboard", use_container_width=True):
                     st.session_state.page = 'customer_dashboard'
                     st.rerun()
-    
+
+    # --- QR Code Scan Section ---
+    st.divider()
+    st.markdown("<h2 style='color: #8b4789;'>📱 Scan a Product QR Code</h2>", unsafe_allow_html=True)
+    st.write("Upload a QR code image to go directly to the product page.")
+    uploaded_file = st.file_uploader("Upload QR code image", type=["png", "jpg", "jpeg"], key="qr_upload")
+
+    if uploaded_file:
+        try:
+            img = Image.open(uploaded_file)
+            qr_data = decode(img)
+            if qr_data:
+                result = qr_data[0].data.decode("utf-8")
+                st.success(f"QR Code points to: {result}")
+
+                # Redirect to product page if URL contains product_id
+                product_id_match = re.search(r'product_id=(\d+)', result)
+                if product_id_match:
+                    product_id = int(product_id_match.group(1))
+                    if any(p['id'] == product_id for p in PRODUCTS):
+                        st.session_state.selected_product = product_id
+                        st.session_state.page = 'product'
+                        st.rerun()
+            else:
+                st.error("No QR code detected in the uploaded image.")
+        except Exception as e:
+            st.error(f"Error reading QR code: {e}")
+
+    # --- Product Display Section ---
     categories = ["All"] + sorted(list(set(p['category'] for p in PRODUCTS)))
     selected_category = st.selectbox("🎨 Select Category", categories)
     filtered = PRODUCTS if selected_category == "All" else [p for p in PRODUCTS if p['category'] == selected_category]
-    
+
     st.markdown(f"<h2 style='color: #8b4789; text-align: center; margin: 30px 0;'>🛍️ {len(filtered)} Products Available</h2>", unsafe_allow_html=True)
-    
+
     cols_per_row = 3
     for i in range(0, len(filtered), cols_per_row):
         cols = st.columns(cols_per_row)
         for j in range(cols_per_row):
             if i + j < len(filtered):
                 display_product_card(filtered[i + j], cols[j])
+
 
 def cart_page():
     """Display shopping cart"""
